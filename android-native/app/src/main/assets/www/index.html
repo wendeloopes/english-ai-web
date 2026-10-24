@@ -360,7 +360,7 @@ if (window.NativeBridge) {
   window.Native.onModelProgress = p => { $('prog').style.display='block'; $('prog').value=Math.max(0,Math.min(1,Number(p)||0)); };
   window.Native.onToken = piece => { if(nativeTokenHandler) nativeTokenHandler(piece); };
   window.Native.onGenDone = () => { const done=nativeDone; nativeDone=null; nativeTokenHandler=null; if(done)done(); };
-  window.Native.onGenError = msg => { const done=nativeDone; nativeDone=null; nativeTokenHandler=null; if(done)done(new Error(msg||'Generation failed')); };
+  window.Native.onGenError = msg => { const done=nativeDone; nativeDone=null; nativeTokenHandler=null; cap(esc(msg||'Generation failed')); setState('idle'); if(done)done(); };
   window.Native.onTtsRange = (id,idx) => { if(id===nativeSpeakingId) showCap(nativeSpeakingText,idx); };
   window.Native.onTtsDone = id => { if(id!==nativeSpeakingId)return; talking=false; if(q.length)pump(); else if(!busy)idleAfter(); };
   window.Native.onSpeechPartial = text => { heard=text||''; cap('<span class="you">'+esc(heard)+'</span>'); };
@@ -385,6 +385,7 @@ if (window.NativeBridge) {
   $('file').onchange=()=>{};
   $('rmModel').onclick=()=>{ if(confirm('Remove the model stored on this phone?'))NativeBridge.removeModel(); };
   $('voiceSel').onfocus=()=>NativeBridge.getVoices();
+  NativeBridge.getVoices();
   $('voiceSel').onchange=e=>{ S.voice=e.target.value; sv('echo.set',S); };
 }
 /* ================= START ================= */
