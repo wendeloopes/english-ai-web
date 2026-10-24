@@ -1,0 +1,98 @@
+name: Build English Ai Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android-twa/**'
+      - 'android-res/**'
+      - 'index.html'
+      - 'manifest.json'
+      - 'icon-*.png'
+      - '.github/workflows/android-twa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: english-ai-android-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build installable APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Generate Android launcher icons
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+          RES=android-twa/app/src/main/res
+          mkdir -p "$RES"/mipmap-mdpi "$RES"/mipmap-hdpi "$RES"/mipmap-xhdpi "$RES"/mipmap-xxhdpi "$RES"/mipmap-xxxhdpi "$RES"/mipmap-anydpi-v26 "$RES"/values
+          for spec in 'mdpi 48' 'hdpi 72' 'xhdpi 96' 'xxhdpi 144' 'xxxhdpi 192'; do
+            set -- $spec
+            density=$1
+            size=$2
+            convert icon-512.png -resize ${size}x${size} "$RES/mipmap-$density/ic_launcher.png"
+            convert icon-512.png -resize ${size}x${size} "$RES/mipmap-$density/ic_launcher_round.png"
+            convert icon-512.png -resize ${size}x${size} "$RES/mipmap-$density/ic_launcher_foreground.png"
+          done
+          cat > "$RES/mipmap-anydpi-v26/ic_launcher.xml" <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background"/>
+              <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+          </adaptive-icon>
+          XML
+          cp "$RES/mipmap-anydpi-v26/ic_launcher.xml" "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
+          cat > "$RES/values/ic_launcher_background.xml" <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources><color name="ic_launcher_background">#14306F</color></resources>
+          XML
+
+      - name: Build debug APK
+        working-directory: android-twa
+        run: gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Verify APK
+        run: |
+          test -s android-twa/app/build/outputs/apk/debug/app-debug.apk
+          ls -lh android-twa/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: English-Ai-Android-APK
+          path: android-twa/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach APK to GitHub Release for version tags
+        if: startsWith(github.ref, 'refs/tags/english-ai-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android-twa/app/build/outputs/apk/debug/app-debug.apk
+          generate_release_notes: true
