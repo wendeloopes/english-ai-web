@@ -43,6 +43,7 @@ jobs:
           test -f _site/icon-192.png
           test -f _site/icon-512.png
           # Self-host MediaPipe so the app can cache its engine for offline use.
+          # Keep this pinned version aligned with VERS in index.html.
           BASE="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.27"
           VENDOR="_site/vendor/mediapipe/tasks-genai/0.10.27"
           mkdir -p "$VENDOR/wasm"
