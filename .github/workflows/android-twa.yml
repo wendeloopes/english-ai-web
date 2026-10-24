@@ -68,10 +68,6 @@ jobs:
           </adaptive-icon>
           XML
           cp "$RES/mipmap-anydpi-v26/ic_launcher.xml" "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
-          cat > "$RES/values/ic_launcher_background.xml" <<'XML'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources><color name="ic_launcher_background">#14306F</color></resources>
-          XML
 
       - name: Build debug APK
         working-directory: android-twa
