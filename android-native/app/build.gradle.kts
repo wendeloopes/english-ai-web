@@ -3,7 +3,7 @@ android {
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     namespace = "com.englishai.app"
     compileSdk = 35
-    defaultConfig { applicationId = "com.englishai.app"; minSdk = 26; targetSdk = 35; versionCode = 1; versionName = "1.0-native" }
+    defaultConfig { applicationId = "com.englishai.app"; minSdk = 26; targetSdk = 35; versionCode = 3; versionName = "1.2"; ndk { abiFilters += listOf("arm64-v8a") } }
 }
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 dependencies {
