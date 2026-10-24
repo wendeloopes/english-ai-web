@@ -51,7 +51,7 @@ jobs:
           curl -fsSL --retry 3 "$BASE/wasm/genai_wasm_internal.wasm" -o "$VENDOR/wasm/genai_wasm_internal.wasm"
           curl -fsSL --retry 3 "$BASE/wasm/genai_wasm_nosimd_internal.js" -o "$VENDOR/wasm/genai_wasm_nosimd_internal.js"
           curl -fsSL --retry 3 "$BASE/wasm/genai_wasm_nosimd_internal.wasm" -o "$VENDOR/wasm/genai_wasm_nosimd_internal.wasm"
-          curl -fsSL --retry 3 "$BASE/LICENSE" -o "$VENDOR/LICENSE"
+          curl -fsSL --retry 3 "https://www.apache.org/licenses/LICENSE-2.0.txt" -o "$VENDOR/LICENSE-2.0.txt"
           test -s "$VENDOR/genai_bundle.mjs"
           test -s "$VENDOR/wasm/genai_wasm_internal.wasm"
           test -s "$VENDOR/wasm/genai_wasm_nosimd_internal.wasm"
