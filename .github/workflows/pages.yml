@@ -31,18 +31,19 @@ jobs:
         uses: actions/checkout@v4
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
-      - name: Validate app files
+      - name: Prepare site files
         run: |
-          test -f index.html
-          test -f manifest.json
-          test -f sw.js
-          test -f icon-192.png
-          test -f icon-512.png
-          python -m json.tool manifest.json >/dev/null
+          mkdir -p _site
+          cp index.html sw.js manifest.json icon-*.png _site/
+          python -m json.tool _site/manifest.json >/dev/null
+          test -f _site/index.html
+          test -f _site/sw.js
+          test -f _site/icon-192.png
+          test -f _site/icon-512.png
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
