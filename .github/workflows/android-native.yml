@@ -28,7 +28,7 @@ jobs:
       - name: Prepare approved UI assets
         run: |
           mkdir -p android-native/app/src/main/assets/www
-          cp index.html icon-192.png icon-512.png icon-maskable-512.png android-native/app/src/main/assets/www/
+          cp icon-192.png icon-512.png icon-maskable-512.png android-native/app/src/main/assets/www/
       - name: Compile debug APK
         working-directory: android-native
         run: gradle assembleDebug --stacktrace
