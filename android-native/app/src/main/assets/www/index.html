@@ -232,7 +232,7 @@ function showCap(s,idx){
 
 /* ================= SPEECH OUT (US English) ================= */
 let q=[],talking=false,busy=false,gen=0;
-const voices=()=>speechSynthesis.getVoices().filter(v=>/^en/i.test(v.lang));
+const voices=()=>window.speechSynthesis?.getVoices?.().filter(v=>/^en/i.test(v.lang))||[];
 function pickVoice(){const v=voices();return v.find(x=>x.name===S.voice)||v.find(x=>x.lang==='en-US'&&/google|natural|samantha|aria|jenny|neural/i.test(x.name))||v.find(x=>x.lang==='en-US')||v[0]}
 function enqueue(s){s=s.replace(/[*#_`>]/g,'').trim();if(!s)return;q.push(s);pump()}
 function pump(){
@@ -244,7 +244,7 @@ function pump(){
   speechSynthesis.speak(u);
 }
 function idleAfter(){setState('idle');if(S.hands&&$('voice').classList.contains('on'))setTimeout(listen,400)}
-function stopAll(){gen++;q=[];talking=false;busy=false;speechSynthesis.cancel();Brain.cancel();if(rec){rec.onend=null;try{rec.abort()}catch(e){}}rec=null;persist();setState('idle')}
+function stopAll(){gen++;q=[];talking=false;busy=false;try{window.speechSynthesis?.cancel()}catch(e){}Brain.cancel();if(rec){rec.onend=null;try{rec.abort()}catch(e){}}rec=null;persist();setState('idle')}
 const shouldSpeak=()=>!muted&&($('voice').classList.contains('on')||S.speak);
 function replay(t){stopAll();t.match(/[^.!?]+[.!?]*\s*/g)?.forEach(enqueue)}
 
@@ -339,7 +339,7 @@ const tg=(id,k)=>{const b=$(id);b.classList.toggle('on',S[k]);b.setAttribute('ar
 tg('tSpeak','speak');tg('tCaps','caps');tg('tHands','hands');tg('tSfx','sfx');
 $('rate').value=S.rate;$('rate').oninput=e=>{S.rate=+e.target.value;sv('echo.set',S)};
 function fillVoices(){const s=$('voiceSel');s.innerHTML='<option value="">Automatic (US)</option>'+voices().map(v=>`<option value="${esc(v.name)}"${v.name===S.voice?' selected':''}>${esc(v.name)} (${v.lang})</option>`).join('')}
-speechSynthesis.onvoiceschanged=fillVoices;fillVoices();$('voiceSel').onchange=e=>{S.voice=e.target.value;sv('echo.set',S)};
+if(window.speechSynthesis)window.speechSynthesis.onvoiceschanged=fillVoices;fillVoices();$('voiceSel').onchange=e=>{S.voice=e.target.value;sv('echo.set',S)};
 $('file').onchange=async e=>{
   const f=e.target.files[0];if(!f)return;const pr=$('prog');pr.style.display='block';pr.value=0;$('mstat').textContent='Saving model on this phone…';
   try{navigator.storage.persist&&navigator.storage.persist();
