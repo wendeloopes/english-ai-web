@@ -102,24 +102,51 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
 
     @JavascriptInterface fun pickModel() = main.post { choose() }
     fun importModel(uri: Uri) { worker.execute {
-        modelLoadFailure = "The model import is in progress. Wait until loading finishes before sending a message."
-        unloaded = false
-        // Release the loaded engine before replacing a large model file to reduce peak RAM use.
-        engine.close()
+        val wasModelReady = modelLoadFailure == null
         val temp = File(activity.filesDir, "model.tmp")
         try {
             val meta = activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
             var expected = -1L
-            meta.use { c -> if (c != null && c.moveToFirst()) { if (!c.isNull(1)) expected = c.getLong(1) } }
-            activity.contentResolver.openInputStream(uri).use { input -> requireNotNull(input) { "Could not open selected file." }.use { src -> temp.outputStream().use { dst -> val buf = ByteArray(1024 * 1024); var n: Int; var total = 0L; while (src.read(buf).also { n = it } > 0) { dst.write(buf, 0, n); total += n; if (expected > 0) call("onModelProgress", (total.toDouble() / expected).coerceIn(0.0, 1.0).toString()) } } } }
+            var sourceName: String? = null
+            meta.use { c ->
+                if (c != null && c.moveToFirst()) {
+                    sourceName = if (c.isNull(0)) null else c.getString(0)
+                    if (!c.isNull(1)) expected = c.getLong(1)
+                }
+            }
+            require(sourceName?.endsWith(".litertlm", ignoreCase = true) == true) {
+                "Choose a compatible LiteRT-LM model ending in .litertlm. The web .task model cannot be used directly in this Android app."
+            }
+            modelLoadFailure = "The model import is in progress. Wait until loading finishes before sending a message."
+            unloaded = false
+            temp.delete()
+            activity.contentResolver.openInputStream(uri).use { input ->
+                requireNotNull(input) { "Could not open selected file." }.use { src ->
+                    temp.outputStream().use { dst ->
+                        val buf = ByteArray(1024 * 1024)
+                        var n: Int
+                        var total = 0L
+                        while (src.read(buf).also { n = it } > 0) {
+                            dst.write(buf, 0, n)
+                            total += n
+                            if (expected > 0) call("onModelProgress", (total.toDouble() / expected).coerceIn(0.0, 1.0).toString())
+                        }
+                    }
+                }
+            }
             require(temp.length() > 1024 * 1024) { "The selected file is too small to be a language model." }
-            // LiteRT-LM requires the on-disk filename to end in .litertlm. The picker display
-            // name is not trusted; we always save to this canonical filename.
-            if (modelFile.exists()) modelFile.delete()
+            // Copy and validate the selected file before releasing the currently loaded model.
+            // A cancelled or failed copy therefore does not unnecessarily unload a working model.
+            engine.close()
+            if (modelFile.exists()) check(modelFile.delete()) { "Could not replace the existing model file." }
             check(temp.renameTo(modelFile)) { "Could not save the model in private app storage." }
             status(false, "Loading model…", "Model saved as ${modelFile.name} (${modelFile.length() / 1024 / 1024} MB). Initializing LiteRT-LM…")
             loadPath()
-        } catch (e: Exception) { temp.delete(); modelLoadFailure = e.message ?: "Could not import model."; status(false, "Import failed", modelLoadFailure!!) }
+        } catch (e: Exception) {
+            temp.delete()
+            modelLoadFailure = if (wasModelReady && !modelFile.exists()) null else (e.message ?: "Could not import model.")
+            status(false, "Import failed", e.message ?: "Could not import model.")
+        }
     } }
     @JavascriptInterface fun removeModel() { worker.execute { unloaded = false; engine.close(); modelFile.delete(); File(activity.filesDir, "model.tmp").delete(); modelLoadFailure = "The local model was removed. Import a compatible .litertlm file in Settings before starting an AI conversation."; status(false, "Demo mode", "Model removed from this phone.") } }
     @JavascriptInterface fun generate(json: String) { cancelled = false; worker.execute { try {
