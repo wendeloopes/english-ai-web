@@ -204,6 +204,7 @@ function makeOrb(cv,S){
 }
 const bigO=makeOrb($('orb'),Math.min(300,innerWidth*.8,innerHeight*.38)|0),smallO=makeOrb($('orbS'),150);
 (function loop(ts){
+  if(document.hidden){requestAnimationFrame(loop);return}
   if($('welcome').classList.contains('on'))smallO.draw(ts);
   if($('voice').classList.contains('on')){bigO.target=level(ts/1000);bigO.draw(ts)}
   requestAnimationFrame(loop)})(0);
