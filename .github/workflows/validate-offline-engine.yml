@@ -1,0 +1,68 @@
+name: Validate English Ai offline engine
+
+on:
+  pull_request:
+    paths:
+      - 'index.html'
+      - 'sw.js'
+      - '.github/workflows/pages.yml'
+      - '.github/workflows/validate-offline-engine.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Check app JavaScript syntax and offline paths
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path("index.html").read_text()
+          match = re.search(r"<script>(.*?)</script>", html, re.S)
+          if not match:
+              raise SystemExit("Inline app script not found")
+          Path("/tmp/english-ai.js").write_text(match.group(1))
+          if "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@" in html:
+              raise SystemExit("Runtime still imports MediaPipe from an external CDN")
+          sw = Path("sw.js").read_text()
+          workflow = Path(".github/workflows/pages.yml").read_text()
+          required = [
+              "genai_bundle.mjs",
+              "genai_wasm_internal.js",
+              "genai_wasm_internal.wasm",
+              "genai_wasm_nosimd_internal.js",
+              "genai_wasm_nosimd_internal.wasm",
+          ]
+          for asset in required:
+              if asset not in sw or asset not in workflow:
+                  raise SystemExit(f"Missing offline runtime asset: {asset}")
+          print("App paths and offline cache entries look consistent.")
+          PY
+          node --check /tmp/english-ai.js
+
+      - name: Verify upstream MediaPipe assets are downloadable
+        shell: bash
+        run: |
+          BASE="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.27"
+          curl -fsSL --retry 3 "$BASE/genai_bundle.mjs" -o /tmp/genai_bundle.mjs
+          curl -fsSL --retry 3 "$BASE/wasm/genai_wasm_internal.js" -o /tmp/genai_wasm_internal.js
+          curl -fsSL --retry 3 "$BASE/wasm/genai_wasm_internal.wasm" -o /tmp/genai_wasm_internal.wasm
+          curl -fsSL --retry 3 "$BASE/wasm/genai_wasm_nosimd_internal.js" -o /tmp/genai_wasm_nosimd_internal.js
+          curl -fsSL --retry 3 "$BASE/wasm/genai_wasm_nosimd_internal.wasm" -o /tmp/genai_wasm_nosimd_internal.wasm
+          test -s /tmp/genai_bundle.mjs
+          test -s /tmp/genai_wasm_internal.wasm
+          test -s /tmp/genai_wasm_nosimd_internal.wasm
+          ls -lh /tmp/genai_bundle.mjs /tmp/genai_wasm_internal.js /tmp/genai_wasm_internal.wasm /tmp/genai_wasm_nosimd_internal.js /tmp/genai_wasm_nosimd_internal.wasm

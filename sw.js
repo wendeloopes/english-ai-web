@@ -1,4 +1,4 @@
-const C='english-ai-v2',SHELL=['./','index.html','manifest.json','icon-192.png','icon-512.png','icon-maskable-512.png'];
+const C='english-ai-v3',SHELL=['./','index.html','manifest.json','icon-192.png','icon-512.png','icon-maskable-512.png','vendor/mediapipe/tasks-genai/0.10.27/genai_bundle.mjs','vendor/mediapipe/tasks-genai/0.10.27/wasm/genai_wasm_internal.js','vendor/mediapipe/tasks-genai/0.10.27/wasm/genai_wasm_internal.wasm','vendor/mediapipe/tasks-genai/0.10.27/wasm/genai_wasm_nosimd_internal.js','vendor/mediapipe/tasks-genai/0.10.27/wasm/genai_wasm_nosimd_internal.wasm'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C).map(x=>caches.delete(x)))).then(()=>self.clients.claim()))});
 // Cache first (works offline), refresh in background so updates arrive on the next launch.

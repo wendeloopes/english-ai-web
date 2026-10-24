@@ -250,14 +250,14 @@ function replay(t){stopAll();t.match(/[^.!?]+[.!?]*\s*/g)?.forEach(enqueue)}
 
 /* ================= BRAIN (Gemma on-device via MediaPipe) ================= */
 const SYS='You are the English Ai tutor, a warm American English conversation partner for a learner. Speak natural American English in 1 to 3 short sentences, then ask one follow-up question. If the learner makes a grammar or word-choice mistake, briefly give the corrected sentence first. Never use markdown, lists or emojis.';
-const VERS=['0.10.27','0.10.26','0.10.25','0.10.22'];
+const VERS=['0.10.27'];
 const Brain={llm:null,last:null,
   async load(){
     let fh;try{fh=await (await navigator.storage.getDirectory()).getFileHandle('model.bin')}catch(e){return setStatus('Demo mode',false)}
     setStatus('Loading model…',false);
     try{
       if(!navigator.gpu)throw new Error('WebGPU is not available in this browser. Use Chrome.');
-      let mod,fs;for(const v of VERS){try{const base='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@'+v;mod=await import(base+'/genai_bundle.mjs');fs=await mod.FilesetResolver.forGenAiTasks(base+'/wasm');break}catch(e){}}
+      let mod,fs;for(const v of VERS){try{const base=new URL('./vendor/mediapipe/tasks-genai/'+v,location.href).href.replace(/\/$/,'');mod=await import(base+'/genai_bundle.mjs');fs=await mod.FilesetResolver.forGenAiTasks(base+'/wasm');break}catch(e){}}
       if(!mod)throw new Error('Engine files not cached yet. Open the app once with internet.');
       const f=await fh.getFile();
       this.llm=await mod.LlmInference.createFromOptions(fs,{baseOptions:{modelAssetBuffer:f.stream().getReader()},maxTokens:1024,topK:40,temperature:.8,randomSeed:1});

@@ -42,6 +42,20 @@ jobs:
           test -f _site/sw.js
           test -f _site/icon-192.png
           test -f _site/icon-512.png
+          # Self-host MediaPipe so the app can cache its engine for offline use.
+          # Keep this pinned version aligned with VERS in index.html.
+          BASE="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.27"
+          VENDOR="_site/vendor/mediapipe/tasks-genai/0.10.27"
+          mkdir -p "$VENDOR/wasm"
+          curl -fsSL --retry 3 "$BASE/genai_bundle.mjs" -o "$VENDOR/genai_bundle.mjs"
+          curl -fsSL --retry 3 "$BASE/wasm/genai_wasm_internal.js" -o "$VENDOR/wasm/genai_wasm_internal.js"
+          curl -fsSL --retry 3 "$BASE/wasm/genai_wasm_internal.wasm" -o "$VENDOR/wasm/genai_wasm_internal.wasm"
+          curl -fsSL --retry 3 "$BASE/wasm/genai_wasm_nosimd_internal.js" -o "$VENDOR/wasm/genai_wasm_nosimd_internal.js"
+          curl -fsSL --retry 3 "$BASE/wasm/genai_wasm_nosimd_internal.wasm" -o "$VENDOR/wasm/genai_wasm_nosimd_internal.wasm"
+          curl -fsSL --retry 3 "https://www.apache.org/licenses/LICENSE-2.0.txt" -o "$VENDOR/LICENSE-2.0.txt"
+          test -s "$VENDOR/genai_bundle.mjs"
+          test -s "$VENDOR/wasm/genai_wasm_internal.wasm"
+          test -s "$VENDOR/wasm/genai_wasm_nosimd_internal.wasm"
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
