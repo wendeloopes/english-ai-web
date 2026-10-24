@@ -17,8 +17,14 @@ class LiteRtEngine(private val context: Context) {
     @Volatile private var conversation: Conversation? = null
     @Synchronized fun load(path: String) {
         close()
-        val candidate = Engine(EngineConfig(modelPath = path, backend = Backend.GPU(), cacheDir = context.cacheDir.absolutePath))
-        try { candidate.initialize(); engine = candidate } catch (e: Exception) { try { candidate.close() } catch (_: Exception) {}; throw e }
+        var candidate = Engine(EngineConfig(modelPath = path, backend = Backend.GPU(), cacheDir = context.cacheDir.absolutePath))
+        try { candidate.initialize(); engine = candidate }
+        catch (gpuError: Exception) {
+            try { candidate.close() } catch (_: Exception) {}
+            candidate = Engine(EngineConfig(modelPath = path, backend = Backend.CPU(), cacheDir = context.cacheDir.absolutePath))
+            try { candidate.initialize(); engine = candidate }
+            catch (cpuError: Exception) { try { candidate.close() } catch (_: Exception) {}; cpuError.addSuppressed(gpuError); throw cpuError }
+        }
     }
     fun generate(system: String, messages: List<Pair<String, String>>, onToken: (String) -> Unit) = runBlocking {
         val e = checkNotNull(engine) { "Load a compatible .litertlm model in Settings first." }
