@@ -62,7 +62,12 @@ svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke
 .b.ai{align-self:flex-start;background:#15131f;border:1px solid var(--line);border-bottom-left-radius:6px;padding-right:38px}
 .rp{position:absolute;right:6px;top:8px;width:26px;height:26px;border-radius:50%;font-size:10px;color:var(--vio2);background:#ffffff0f}
 .bar{display:flex;gap:8px;align-items:center;background:#12101c;border:1px solid var(--line);border-radius:28px;padding:6px 6px 6px 8px}
-.bar input{flex:1;min-width:0;background:none;border:0;color:#fff;font:inherit;font-size:15px;padding:8px 0}.bar input::placeholder{color:#6d6a86}
+.bar input{flex:1;min-width:0;background:none;border:0;color:#fff;font:inherit;font-size:16px;padding:10px 0;outline:none;touch-action:manipulation}.bar input::placeholder{color:#6d6a86}
+.bar input:focus{outline:none;box-shadow:none}
+.bar{flex-shrink:0;min-height:52px}
+#chat{min-height:0}
+#msgs{min-height:0;overscroll-behavior:contain;scrollbar-width:thin}
+@media (max-height:520px){#chat{padding-bottom:6px}#msgs{padding-top:4px;gap:7px}.bar{min-height:46px}.rb{width:36px;height:36px}}
 .rb{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:none}
 .rb.send{background:#fff;color:#000}.rb.vm{background:#1c1930;color:#cfcde0}
 /* overlays */
@@ -325,8 +330,19 @@ $('veil').onclick=closeAll;$('closeSheet').onclick=closeAll;
 ['vMenu','cMenu'].forEach(i=>$(i).onclick=()=>panel('drawer',true));
 ['vGear','cGear','status'].forEach(i=>$(i).onclick=()=>panel('sheet',true));
 $('toChat').onclick=()=>{stopAll();render();go('chat')};$('cVoice').onclick=()=>{stopAll();go('voice')};
-$('send').onclick=()=>{const v=$('inp').value;$('inp').value='';ask(v)};
-$('inp').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$('send').click()}};
+function sendTypedMessage(){
+  const input=$('inp'), value=input.value;
+  if(!value.trim()){input.focus();return;}
+  // Preserve text until the message is accepted by ask(), and keep the composer
+  // usable after the Android IME hides or resizes the WebView.
+  input.value='';
+  ask(value);
+}
+$('send').onclick=sendTypedMessage;
+$('inp').addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendTypedMessage();}
+});
+$('inp').addEventListener('focus',()=>setTimeout(()=>{if($('chat').classList.contains('on'))$('msgs').scrollTop=$('msgs').scrollHeight;},250));
 $('mute').onclick=()=>{muted=!muted;$('mute').style.opacity=muted?.4:1;if(muted){q=[];speechSynthesis.cancel();talking=false}};
 function list(){const L=$('list');L.innerHTML='';chats.forEach(c=>{const d=document.createElement('div');d.className='ci'+(c.id===curId?' cur':'');
   d.innerHTML='<button class="t"></button><button class="x" aria-label="Delete">✕</button>';d.firstChild.textContent=c.title;
