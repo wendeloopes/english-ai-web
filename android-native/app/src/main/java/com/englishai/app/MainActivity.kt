@@ -48,5 +48,10 @@ class MainActivity : ComponentActivity() {
         else micPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
     override fun onBackPressed() { web.evaluateJavascript("window.Native && window.Native.onBack ? window.Native.onBack() : false") { handled -> if (handled != "true") finish() } }
-    override fun onDestroy() { if (::bridge.isInitialized) bridge.close(); if (::web.isInitialized) web.destroy(); super.onDestroy() }
+    private val idle = android.os.Handler(android.os.Looper.getMainLooper())
+    private val unloadTask = Runnable { if (::bridge.isInitialized) bridge.unloadForBackground() }
+    override fun onStop() { super.onStop(); idle.postDelayed(unloadTask, 3 * 60 * 1000L) }
+    override fun onStart() { super.onStart(); idle.removeCallbacks(unloadTask); if (::bridge.isInitialized) bridge.reloadIfUnloaded() }
+    override fun onTrimMemory(level: Int) { super.onTrimMemory(level); if (level >= 15 && ::bridge.isInitialized) bridge.trimMemory() }
+    override fun onDestroy() { idle.removeCallbacks(unloadTask); if (::bridge.isInitialized) bridge.close(); if (::web.isInitialized) web.destroy(); super.onDestroy() }
 }
