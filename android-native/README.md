@@ -1,11 +1,13 @@
 # English Ai — Android nativo
 
-Esta pasta separa a versão Android nativa da versão web/TWA. O objetivo é manter a interface aprovada e ligar as funções de modelo, microfone, fala e importação de arquivo a APIs Android locais.
+Esta pasta contém a versão Android nativa, mantendo a interface aprovada e conectando o chat às APIs locais de modelo, microfone, fala e importação de arquivos.
 
-## Modelo
+## Modelo Android
 
-O runtime Android usa LiteRT-LM e requer um arquivo .litertlm compatível. O modelo .task usado pela versão web MediaPipe não é automaticamente intercambiável. Não basta renomear o arquivo.
+O runtime nativo usa LiteRT-LM e exige um modelo **compatível com o formato `.litertlm`**. O arquivo `.task` usado pela versão web/MediaPipe não é automaticamente compatível; renomeá-lo não converte o modelo.
 
-## Estado
+O motor usa CPU como opção conservadora, ajusta o limite de tokens ao total de RAM reportado pelo Android e reduz o histórico de conversa em aparelhos com menos memória. Ao ficar em segundo plano por alguns minutos, o app libera o motor e tenta carregá-lo novamente ao voltar para o primeiro plano.
 
-O scaffold e o workflow de compilação serão verificados antes de considerar o APK pronto. Um build CI, sozinho, não comprova o desempenho no aparelho real; reconhecimento offline e vozes dependem dos recursos instalados no Android.
+## Build e validação
+
+O workflow `android-native.yml` compila o APK de depuração e verifica os contratos entre a interface JavaScript e a ponte Kotlin. Build bem-sucedido comprova compilação, mas não substitui teste no aparelho real: desempenho, consumo de memória, compatibilidade do modelo e reconhecimento de voz podem variar conforme o dispositivo e os serviços instalados.
