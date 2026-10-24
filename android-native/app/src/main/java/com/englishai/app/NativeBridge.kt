@@ -73,28 +73,77 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     @JavascriptInterface fun speak(id: String, text: String, rate: String, voiceName: String) { main.post { try { tts?.setSpeechRate(rate.toFloatOrNull() ?: 1f); tts?.voices?.firstOrNull { it.name == voiceName }?.let { tts?.voice = it }; tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) } catch (_: Exception) { call("onTtsDone", JSONObject.quote(id)) } } }
     @JavascriptInterface fun stopSpeaking() { main.post { tts?.stop() } }
     @JavascriptInterface fun startListening() { main.post { requestMic() } }
-    fun startListeningGranted() { main.post {
-        if (listening) return@post
-        if (!SpeechRecognizer.isRecognitionAvailable(activity)) { call("onSpeechError", JSONObject.quote("Speech recognition is not available on this phone.")); return@post }
+    fun startListeningGranted() {
+        main.post {
+            if (listening) return@post
+            if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
+                call("onSpeechError", JSONObject.quote("No speech recognition service is available. Check Android's Speech Recognition settings."))
+                return@post
+            }
+            // Prefer truly on-device recognition, but recover from ERROR_SERVER_DISCONNECTED (11)
+            // by retrying once with Android's default recognition service.
+            if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)) {
+                beginListening(useOnDevice = true)
+            } else {
+                beginListening(useOnDevice = false)
+            }
+        }
+    }
+
+    private fun beginListening(useOnDevice: Boolean) {
         try {
-            listening = true; recognizer?.destroy()
-            if (Build.VERSION.SDK_INT < 31 || !SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)) { listening = false; call("onSpeechError", JSONObject.quote("Offline English speech recognition is not available. Install an on-device English speech pack, or type in chat.")); return@post }
-            recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(activity)
+            try { recognizer?.destroy() } catch (_: Exception) {}
+            listening = true
+            recognizer = if (useOnDevice && Build.VERSION.SDK_INT >= 31) {
+                SpeechRecognizer.createOnDeviceSpeechRecognizer(activity)
+            } else {
+                SpeechRecognizer.createSpeechRecognizer(activity)
+            }
             recognizer?.setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params: android.os.Bundle?) {}
                 override fun onBeginningOfSpeech() {}
                 override fun onRmsChanged(rmsdB: Float) { call("onLevel", (rmsdB / 12f).coerceIn(0f, 1f).toString()) }
                 override fun onBufferReceived(buffer: ByteArray?) {}
                 override fun onEndOfSpeech() { listening = false }
-                override fun onError(error: Int) { listening = false; call("onSpeechError", JSONObject.quote("Speech recognition error ($error). You can type instead.")) }
-                override fun onResults(results: android.os.Bundle?) { listening = false; val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty(); call("onSpeechEnd", JSONObject.quote(text)) }
-                override fun onPartialResults(results: android.os.Bundle?) { val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty(); call("onSpeechPartial", JSONObject.quote(text)) }
+                override fun onError(error: Int) {
+                    listening = false
+                    if (error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED && useOnDevice) {
+                        // Some Android builds advertise on-device recognition but its service
+                        // disconnects. Retry with the system recognizer instead of stopping cold.
+                        main.postDelayed({ if (!listening) beginListening(useOnDevice = false) }, 250)
+                    } else {
+                        val detail = when (error) {
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Android denied microphone access."
+                            SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "English (United States) speech data is not installed."
+                            SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> "Android's speech recognition service disconnected. Check or update the Speech Recognition service in system settings."
+                            else -> "Speech recognition error ($error). You can type instead."
+                        }
+                        call("onSpeechError", JSONObject.quote(detail))
+                    }
+                }
+                override fun onResults(results: android.os.Bundle?) {
+                    listening = false
+                    val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                    call("onSpeechEnd", JSONObject.quote(text))
+                }
+                override fun onPartialResults(results: android.os.Bundle?) {
+                    val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                    call("onSpeechPartial", JSONObject.quote(text))
+                }
                 override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
             })
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply { putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM); putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US"); putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true); putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true) }
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, useOnDevice)
+            }
             recognizer?.startListening(intent)
-        } catch (e: Exception) { listening = false; call("onSpeechError", JSONObject.quote(e.message ?: "Could not start microphone.")) }
-    } }
+        } catch (e: Exception) {
+            listening = false
+            call("onSpeechError", JSONObject.quote(e.message ?: "Could not start microphone."))
+        }
+    }
     @JavascriptInterface fun stopListening() { main.post { try { recognizer?.stopListening() } catch (_: Exception) {} } }
     @JavascriptInterface fun cancelListening() { main.post { listening = false; try { recognizer?.cancel() } catch (_: Exception) {} } }
     fun speechError(message: String) = call("onSpeechError", JSONObject.quote(message))
