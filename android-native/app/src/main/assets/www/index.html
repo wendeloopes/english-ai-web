@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <title>English Ai</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
 <style>
 :root{color-scheme:dark;--ink:#fff;--mute:#8d8aa3;--card:#0d0b1f;--line:#26223f;--vio2:#b9a2ff}
 *{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
@@ -209,7 +209,7 @@ async function startMeter(){
     an=ac.createAnalyser();an.fftSize=256;ac.createMediaStreamSource(mstream).connect(an);abuf=new Uint8Array(an.frequencyBinCount)}catch(e){an=null}
 }
 function level(t){
-  if(state==='listening'){if(an){an.getByteFrequencyData(abuf);let s=0;for(const v of abuf)s+=v;return Math.min(1,s/abuf.length/90)}return .12+.3*Math.abs(Math.sin(t*3.1)*Math.sin(t*.9))}
+  if(state==='listening'){if(an){an.getByteFrequencyData(abuf);let s=0;for(const v of abuf)s+=v;return Math.min(1,s/abuf.length/90)}return window.NativeBridge ? nativeMicLevel : .12+.3*Math.abs(Math.sin(t*3.1)*Math.sin(t*.9))}
   if(state==='speaking')return .3+.4*Math.abs(Math.sin(t*8.3)*Math.sin(t*2.7))+Math.random()*.1;
   if(state==='thinking')return .08+.06*Math.sin(t*4);return .03;
 }
@@ -354,9 +354,9 @@ $('wipe').onclick=()=>{if(confirm('Delete all conversations?')){chats=[];curId=n
 
 /* Native Android adapter: keep the approved UI; replace browser-only capabilities. */
 if (window.NativeBridge) {
-  let nativeTokenHandler=null, nativeDone=null, nativeSpeakingId='', nativeListening=false;
+  let nativeTokenHandler=null, nativeDone=null, nativeSpeakingId='', nativeListening=false, nativeMicLevel=0;
   window.Native = window.Native || {};
-  window.Native.onModelStatus = (ok,label,msg) => { setStatus(label || (ok?'Gemma ready · offline':'Demo mode'),!!ok); if(msg) $('mstat').textContent=msg; };
+  window.Native.onModelStatus = (ok,label,msg) => { setStatus(label || (ok?'Gemma ready · offline':'Demo mode'),!!ok); $('prog').style.display='none'; if(msg) $('mstat').textContent=msg; };
   window.Native.onModelProgress = p => { $('prog').style.display='block'; $('prog').value=Math.max(0,Math.min(1,Number(p)||0)); };
   window.Native.onToken = piece => { if(nativeTokenHandler) nativeTokenHandler(piece); };
   window.Native.onGenDone = () => { const done=nativeDone; nativeDone=null; nativeTokenHandler=null; if(done)done(); };
@@ -366,7 +366,7 @@ if (window.NativeBridge) {
   window.Native.onSpeechPartial = text => { heard=text||''; cap('<span class="you">'+esc(heard)+'</span>'); };
   window.Native.onSpeechEnd = text => { nativeListening=false; rec=null; if(state==='listening' && (text||heard).trim()) ask((text||heard).trim()); else if(state==='listening')setState('idle'); };
   window.Native.onSpeechError = msg => { nativeListening=false; rec=null; if(state==='listening'){cap(esc(msg||'Speech recognition is unavailable. Type in chat.'));setState('idle');} };
-  window.Native.onLevel = value => { bigO.target=Math.max(0,Math.min(1,Number(value)||0)); };
+  window.Native.onLevel = value => { nativeMicLevel=Math.max(0,Math.min(1,Number(value)||0)); };
   window.Native.onVoices = json => { try { const a=JSON.parse(json||'[]'),s=$('voiceSel'); s.innerHTML='<option value="">System default (US)</option>'+a.map(v=>'<option value="'+esc(v.name)+'">'+esc(v.name)+' ('+esc(v.lang)+')</option>').join(''); s.value=S.voice||''; } catch(e){} };
   window.Native.onBack = () => { if($('sheet').classList.contains('on')||$('drawer').classList.contains('on')){closeAll();return true;} if($('chat').classList.contains('on')){go('voice');return true;} return false; };
   Brain.load = () => NativeBridge.loadModel();
@@ -385,6 +385,7 @@ if (window.NativeBridge) {
   $('file').onchange=()=>{};
   $('rmModel').onclick=()=>{ if(confirm('Remove the model stored on this phone?'))NativeBridge.removeModel(); };
   $('voiceSel').onfocus=()=>NativeBridge.getVoices();
+  $('mute').onclick=()=>{ muted=!muted; $('mute').style.opacity=muted?.4:1; if(muted){q=[];NativeBridge.stopSpeaking();talking=false;} };
   NativeBridge.getVoices();
   $('voiceSel').onchange=e=>{ S.voice=e.target.value; sv('echo.set',S); };
 }
