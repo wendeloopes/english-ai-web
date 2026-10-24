@@ -142,7 +142,7 @@ progress{width:100%;height:6px;margin-top:8px;display:none}
 <div id="sheet">
   <h3>Settings</h3>
   <div class="row"><div>AI model<small id="mstat">No model loaded. Running in demo mode.</small><progress id="prog" max="1" value="0"></progress></div>
-    <label class="btn" for="file">Choose file</label><input type="file" id="file" hidden></div>
+    <label class="btn" for="file">Choose file</label><input type="file" id="file" accept=".litertlm" hidden></div>
   <div class="row"><div>Remove model<small>Frees the space used on this phone.</small></div><button class="btn g" id="rmModel">Remove</button></div>
   <div class="row"><div>Voice (US English)</div><select id="voiceSel"></select></div>
   <div class="row"><div>Speaking speed</div><input type="range" id="rate" min=".7" max="1.3" step=".05"></div>
@@ -248,36 +248,67 @@ function stopAll(){gen++;q=[];talking=false;busy=false;speechSynthesis.cancel();
 const shouldSpeak=()=>!muted&&($('voice').classList.contains('on')||S.speak);
 function replay(t){stopAll();t.match(/[^.!?]+[.!?]*\s*/g)?.forEach(enqueue)}
 
-/* ================= BRAIN (Gemma on-device via MediaPipe) ================= */
+/* ================= BRAIN (Gemma 4 on-device via LiteRT-LM) ================= */
 const SYS='You are the English Ai tutor, a warm American English conversation partner for a learner. Speak natural American English in 1 to 3 short sentences, then ask one follow-up question. If the learner makes a grammar or word-choice mistake, briefly give the corrected sentence first. Never use markdown, lists or emojis.';
-const VERS=['0.10.27'];
-const Brain={llm:null,last:null,
+const LITERT_VERSION='0.18.0';
+const Brain={
+  engine:null,api:null,chat:null,chatId:null,
   async load(){
+    if(this.engine){setStatus('Gemma ready · offline',true);return}
     let fh;try{fh=await (await navigator.storage.getDirectory()).getFileHandle('model.bin')}catch(e){return setStatus('Demo mode',false)}
+    if(ld('echo.modelFormat','')!=='litertlm'){
+      setStatus('Model format update needed',false);
+      $('mstat').textContent='Select a Gemma 4 .litertlm model file. Older .task files are not compatible with this engine.';
+      return;
+    }
     setStatus('Loading model…',false);
     try{
-      if(!navigator.gpu)throw new Error('WebGPU is not available in this browser. Use Chrome.');
-      let mod,fs;for(const v of VERS){try{const base=new URL('./vendor/mediapipe/tasks-genai/'+v,location.href).href.replace(/\/$/,'');mod=await import(base+'/genai_bundle.mjs');fs=await mod.FilesetResolver.forGenAiTasks(base+'/wasm');break}catch(e){}}
-      if(!mod)throw new Error('Engine files not cached yet. Open the app once with internet.');
+      if(!navigator.gpu)throw new Error('WebGPU is not available in this browser. Use a recent version of Chrome.');
+      const base=new URL('./vendor/litert-lm/'+LITERT_VERSION+'/',location.href).href;
+      const mod=await import(base+'litert-lm.js');
+      await mod.loadLiteRtLm(base+'wasm/');
       const f=await fh.getFile();
-      this.llm=await mod.LlmInference.createFromOptions(fs,{baseOptions:{modelAssetBuffer:f.stream().getReader()},maxTokens:1024,topK:40,temperature:.8,randomSeed:1});
+      this.api=mod;
+      this.engine=await mod.Engine.create({model:f,mainExecutorSettings:{maxNumTokens:4096}});
+      this.chat=null;this.chatId=null;
       setStatus('Gemma ready · offline',true);
-    }catch(e){this.llm=null;setStatus('Demo mode',false);$('mstat').textContent='Could not load the model: '+(e.message||e)}
+    }catch(e){
+      try{await this.engine?.delete()}catch(_){}
+      this.engine=null;this.api=null;this.chat=null;this.chatId=null;
+      setStatus('Demo mode',false);
+      $('mstat').textContent='Could not load the model: '+(e.message||e);
+    }
   },
-  cancel(){try{this.llm&&this.llm.cancelProcessing()}catch(e){}},
+  cancel(){
+    try{this.chat?.cancel()}catch(e){}
+    this.chat=null;this.chatId=null;
+  },
+  async unload(){
+    this.cancel();
+    const old=this.engine;this.engine=null;this.api=null;
+    try{await old?.delete()}catch(e){}
+  },
   async reply(msgs,on,alive){
-    if(!this.llm){const t=demo(msgs.at(-1).t);for(const w of t.split(/(?<=\s)/)){if(!alive())return;on(w);await sleep(60)}return}
-    let turns=msgs.slice(-10);while(turns.length&&turns[0].r!=='me')turns.shift();
-    let p='<|turn>system\n'+SYS+'<turn|>\n';turns.forEach(m=>{p+='<|turn>'+(m.r==='me'?'user':'model')+'\n'+m.t+'<turn|>\n'});p+='<|turn>model\n';
-    if(this.last)await this.last.catch(()=>{});
-    try{this.last=this.llm.generateResponse(p,part=>{if(alive())on(part)});await this.last}catch(e){}
-  }};
+    if(!this.engine){const t=demo(msgs.at(-1).t);for(const w of t.split(/(?<=\\s)/)){if(!alive())return;on(w);await sleep(60)}return}
+    const id=cur().id;
+    if(!this.chat||this.chatId!==id){
+      const history=msgs.slice(0,-1).filter(m=>m.t).slice(-20).map(m=>({role:m.r==='me'?'user':'assistant',content:m.t}));
+      this.chat=await this.engine.createConversation({preface:{messages:[{role:'system',content:SYS},...history]},sessionConfig:{maxOutputTokens:512}});
+      this.chatId=id;
+    }
+    const stream=this.chat.sendMessageStreaming(msgs.at(-1).t);
+    for await(const chunk of stream){
+      if(!alive()){try{this.chat?.cancel()}catch(e){};break}
+      for(const item of chunk.content||[])if(item.type==='text'&&item.text)on(item.text);
+    }
+  }
+};
 function demo(t){t=t.toLowerCase();
   if(/am agree/.test(t))return 'Close! We say “I agree with you,” without “am.” Can you say it again?';
   if(/interview/.test(t))return 'Great choice. Tell me a little about yourself and why you want this job.';
   if(/phrasal/.test(t))return 'Here are three: “look up” means to search for information, “give up” means to stop trying, and “run out of” means to have none left. Want to try a sentence?';
   return 'Nice to hear you! This is demo mode, so load your model in Settings. Meanwhile, tell me about your day.'}
-function setStatus(t,ok){$('status').textContent=t;$('status').classList.toggle('ok',ok);$('mstat').textContent=ok?'Model loaded. Everything runs on this phone.':(t==='Loading model…'?t:'No model loaded. Running in demo mode.')}
+function setStatus(t,ok){$('status').textContent=t;$('status').classList.toggle('ok',ok);$('mstat').textContent=ok?'Gemma runs on this phone; voice recognition may need internet.':(t==='Loading model…'?t:'No model loaded. Running in demo mode.')}
 
 /* ================= CONVERSATION ================= */
 async function ask(text){
@@ -341,15 +372,29 @@ $('rate').value=S.rate;$('rate').oninput=e=>{S.rate=+e.target.value;sv('echo.set
 function fillVoices(){const s=$('voiceSel');s.innerHTML='<option value="">Automatic (US)</option>'+voices().map(v=>`<option value="${esc(v.name)}"${v.name===S.voice?' selected':''}>${esc(v.name)} (${v.lang})</option>`).join('')}
 speechSynthesis.onvoiceschanged=fillVoices;fillVoices();$('voiceSel').onchange=e=>{S.voice=e.target.value;sv('echo.set',S)};
 $('file').onchange=async e=>{
-  const f=e.target.files[0];if(!f)return;const pr=$('prog');pr.style.display='block';pr.value=0;$('mstat').textContent='Saving model on this phone…';
-  try{navigator.storage.persist&&navigator.storage.persist();
-    const fh=await (await navigator.storage.getDirectory()).getFileHandle('model.bin',{create:true}),w=await fh.createWritable(),rd=f.stream().getReader();let n=0;
+  const f=e.target.files[0];if(!f)return;
+  if(!f.name.toLowerCase().endsWith('.litertlm')){
+    $('mstat').textContent='Choose the Gemma 4 web model in .litertlm format. The older .task file may produce incorrect output.';
+    e.target.value='';return;
+  }
+  const pr=$('prog');pr.style.display='block';pr.value=0;$('mstat').textContent='Saving model on this phone…';
+  let w=null;
+  try{
+    await Brain.unload();
+    if(navigator.storage.persist)await navigator.storage.persist();
+    const fh=await (await navigator.storage.getDirectory()).getFileHandle('model.bin',{create:true});
+    w=await fh.createWritable();const rd=f.stream().getReader();let n=0;
     for(;;){const {done,value}=await rd.read();if(done)break;await w.write(value);n+=value.length;pr.value=n/f.size}
-    await w.close();pr.style.display='none';await Brain.load();
-  }catch(err){pr.style.display='none';$('mstat').textContent='Could not save the file: '+(err.message||err)}
+    await w.close();w=null;
+    sv('echo.modelFormat','litertlm');sv('echo.modelName',f.name);
+    pr.style.display='none';await Brain.load();
+  }catch(err){
+    try{await w?.abort(err)}catch(_){}
+    pr.style.display='none';$('mstat').textContent='Could not save/load the model: '+(err.message||err);
+  }
   e.target.value='';
 };
-$('rmModel').onclick=async()=>{try{await (await navigator.storage.getDirectory()).removeEntry('model.bin')}catch(e){}Brain.llm=null;setStatus('Demo mode',false)};
+$('rmModel').onclick=async()=>{await Brain.unload();try{await (await navigator.storage.getDirectory()).removeEntry('model.bin')}catch(e){}sv('echo.modelFormat',null);sv('echo.modelName',null);setStatus('Demo mode',false)};
 $('wipe').onclick=()=>{if(confirm('Delete all conversations?')){chats=[];curId=null;persist();cur();render();list()}};
 
 /* ================= START ================= */
