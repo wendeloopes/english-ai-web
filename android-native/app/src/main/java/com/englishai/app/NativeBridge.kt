@@ -144,17 +144,22 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
                 override fun onError(error: Int) {
                     listening = false
                     if ((error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED ||
-                         error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) && useOnDevice) {
-                        // On some phones, on-device English recognition is advertised but its
-                        // language pack is missing or its service disconnects. Retry once with
-                        // Android's default recognizer, which may use the installed online service.
+                         error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE ||
+                         error == SpeechRecognizer.ERROR_NO_MATCH) && useOnDevice) {
+                        // On some phones, on-device recognition is advertised but the language pack is
+                        // missing, the service disconnects, or it fails to match speech. Retry
+                        // once with Android's default service. The useOnDevice flag prevents loops.
                         main.postDelayed({ if (!listening) beginListening(useOnDevice = false) }, 250)
                     } else {
                         val detail = when (error) {
                             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Android denied microphone access."
                             SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "English speech recognition is unavailable on this phone. Install/update the Google app and Speech Recognition service, then download English (United States) speech/language data in their settings. You can still type your answer."
-                            SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> "Android's speech recognition service disconnected. Check or update the Speech Recognition service in system settings."
-                            else -> "Speech recognition error ($error). You can type instead."
+                            SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> "Android's speech recognition service disconnected. Check or update the Speech Recognition service in system settings. You can still type your answer."
+                            SpeechRecognizer.ERROR_NO_MATCH -> "I couldn't understand that phrase. Move closer to the microphone, speak clearly in English after the listening screen appears, and try again. You can also type your answer."
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "I didn't hear speech. Tap the microphone and start speaking when the listening screen appears. You can also type your answer."
+                            SpeechRecognizer.ERROR_AUDIO -> "The microphone audio could not be captured. Check microphone permission and make sure another app isn't using the microphone. You can also type your answer."
+                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Speech recognition is busy. Wait a moment and try the microphone again, or type your answer."
+                            else -> "Speech recognition couldn't complete (code $error). Check microphone permission and the English (United States) speech service, then try again or type your answer."
                         }
                         call("onSpeechError", JSONObject.quote(detail))
                     }
