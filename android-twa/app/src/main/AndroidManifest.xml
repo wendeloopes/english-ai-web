@@ -9,7 +9,7 @@
         android:theme="@style/Theme.EnglishAi"
         android:usesCleartextTraffic="false">
         <activity
-            android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
+            android:name="com.englishai.app.EnglishAiLauncherActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true"
             android:screenOrientation="portrait"
