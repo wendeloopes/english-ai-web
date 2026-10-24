@@ -104,6 +104,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     fun importModel(uri: Uri) { worker.execute {
         val wasModelReady = modelLoadFailure == null
         val temp = File(activity.filesDir, "model.tmp")
+        var engineClosed = false
         try {
             val meta = activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
             var expected = -1L
@@ -138,13 +139,14 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
             // Copy and validate the selected file before releasing the currently loaded model.
             // A cancelled or failed copy therefore does not unnecessarily unload a working model.
             engine.close()
+            engineClosed = true
             if (modelFile.exists()) check(modelFile.delete()) { "Could not replace the existing model file." }
             check(temp.renameTo(modelFile)) { "Could not save the model in private app storage." }
             status(false, "Loading model…", "Model saved as ${modelFile.name} (${modelFile.length() / 1024 / 1024} MB). Initializing LiteRT-LM…")
             loadPath()
         } catch (e: Exception) {
             temp.delete()
-            modelLoadFailure = if (wasModelReady && !modelFile.exists()) null else (e.message ?: "Could not import model.")
+            modelLoadFailure = if (wasModelReady && !engineClosed) null else (e.message ?: "Could not import model.")
             status(false, "Import failed", e.message ?: "Could not import model.")
         }
     } }
