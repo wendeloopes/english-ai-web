@@ -39,6 +39,8 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
                 override fun onError(id: String?) { id?.let { call("onTtsDone", JSONObject.quote(it)) } }
                 override fun onRangeStart(id: String?, start: Int, end: Int, frame: Int) { id?.let { call("onTtsRange", JSONObject.quote(it), start.toString()) } }
             })
+            // TTS initializes asynchronously; refresh after it is ready so the UI gets real voices.
+            refreshVoices()
         } }
     }
     private fun call(name: String, vararg args: String) { val code = "window.Native && window.Native." + name + " && window.Native." + name + "(" + args.joinToString(",") + ")"; main.post { web.evaluateJavascript(code, null) } }
