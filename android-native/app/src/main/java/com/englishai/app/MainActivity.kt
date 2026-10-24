@@ -29,7 +29,13 @@ class MainActivity : ComponentActivity() {
         web.webChromeClient = WebChromeClient()
         val loader = WebViewAssetLoader.Builder().addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this)).build()
         web.webViewClient = object : WebViewClient() {
-            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest) = loader.shouldInterceptRequest(request.url)
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): android.webkit.WebResourceResponse? =
+                loader.shouldInterceptRequest(request.url)
+            override fun onPageFinished(view: WebView, url: String) {
+                super.onPageFinished(view, url)
+                bridge.loadModel()
+                bridge.refreshVoices()
+            }
         }
         bridge = NativeBridge(this, web, { pickModel.launch(arrayOf("*/*")) }, { requestMic() })
         web.addJavascriptInterface(bridge, "NativeBridge")
