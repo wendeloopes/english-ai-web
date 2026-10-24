@@ -29,7 +29,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     private var recognizer: SpeechRecognizer? = null
     @Volatile private var cancelled = false
     @Volatile private var listening = false
-    private val modelFile get() = File(activity.filesDir, "model.litertlm")
+    private val modelFile get() = File(activity.filesDir, "model.bin")
     init {
         tts = TextToSpeech(activity) { status -> if (status == TextToSpeech.SUCCESS) {
             tts?.language = Locale.US
@@ -43,7 +43,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     }
     private fun call(name: String, vararg args: String) { val code = "window.Native && window.Native." + name + " && window.Native." + name + "(" + args.joinToString(",") + ")"; main.post { web.evaluateJavascript(code, null) } }
     private fun status(ok: Boolean, label: String, msg: String) = call("onModelStatus", ok.toString(), JSONObject.quote(label), JSONObject.quote(msg))
-    @JavascriptInterface fun loadModel() { if (!modelFile.exists()) { status(false, "Demo mode", "Choose a compatible .litertlm model file in Settings."); return }; loadPath() }
+    @JavascriptInterface fun loadModel() { if (!modelFile.exists()) { status(false, "Demo mode", "Choose your compatible local model file in Settings."); return }; loadPath() }
     private fun loadPath() { status(false, "Loading model…", "Initializing the local model; this may take several seconds."); worker.execute { try { engine.load(modelFile.absolutePath); status(true, "Gemma ready · offline", "Model ready. Inference runs locally on this phone.") } catch (e: Exception) { status(false, "Model error", e.message ?: "Could not load this model file.") } } }
     @JavascriptInterface fun pickModel() = main.post { choose() }
     fun importModel(uri: Uri) { worker.execute {
@@ -52,7 +52,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
             val meta = activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
             var name = "model"; var expected = -1L
             meta.use { c -> if (c != null && c.moveToFirst()) { name = c.getString(0) ?: "model"; if (!c.isNull(1)) expected = c.getLong(1) } }
-            require(name.endsWith(".litertlm", ignoreCase = true)) { "This Android engine requires a .litertlm model. The web .task file cannot be used directly." }
+            // Keep the source brief contract: accept any selected filename and persist as model.bin.\n            // LiteRT-LM validates actual format during load; extension alone is not a compatibility test.
             activity.contentResolver.openInputStream(uri).use { input -> requireNotNull(input) { "Could not open selected file." }.use { src -> temp.outputStream().use { dst -> val buf = ByteArray(1024 * 1024); var n: Int; var total = 0L; while (src.read(buf).also { n = it } > 0) { dst.write(buf, 0, n); total += n; if (expected > 0) call("onModelProgress", (total.toDouble() / expected).coerceIn(0.0, 1.0).toString()) } } } }
             require(temp.length() > 1024 * 1024) { "The selected file is too small to be a language model." }
             if (modelFile.exists()) modelFile.delete()
