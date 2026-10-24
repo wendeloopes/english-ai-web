@@ -143,8 +143,8 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
                 SpeechRecognizer.createSpeechRecognizer(activity)
             }
             recognizer?.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: android.os.Bundle?) {}
-                override fun onBeginningOfSpeech() {}
+                override fun onReadyForSpeech(params: android.os.Bundle?) { call("onSpeechReady") }
+                override fun onBeginningOfSpeech() { call("onSpeechStarted") }
                 override fun onRmsChanged(rmsdB: Float) { call("onLevel", (rmsdB / 12f).coerceIn(0f, 1f).toString()) }
                 override fun onBufferReceived(buffer: ByteArray?) {}
                 override fun onEndOfSpeech() { listening = false }
