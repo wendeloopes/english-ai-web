@@ -156,6 +156,8 @@ progress{width:100%;height:6px;margin-top:8px;display:none}
   <div class="row"><div>Sounds and vibration<small>Soft tones when listening starts and stops.</small></div><button class="sw" id="tSfx" role="switch"></button></div>
   <div class="row"><div>Hands-free<small>Listen again right after she finishes. Use headphones.</small></div><button class="sw" id="tHands" role="switch"></button></div>
   <div class="row"><div>Delete all conversations</div><button class="btn g" id="wipe">Delete</button></div>
+  <div class="row"><div>Which model?<small>Android needs a compatible .litertlm file; the web version .task file is not interchangeable. Gemma 4 E4B (3.6 GB): phones with 6 GB+ RAM. Gemma 4 E2B (2.6 GB): phones with 4 GB RAM, lighter and faster.</small></div></div>
+  <div class="row" style="border:0;padding-bottom:0"><small id="ver" style="color:var(--mute);font-size:11px"></small></div>
   <div class="row" style="border:0"><button class="btn" id="closeSheet" style="width:100%">Done</button></div>
 </div>
 </div>
@@ -404,6 +406,7 @@ if (window.NativeBridge) {
   $('rmModel').onclick=()=>{ if(confirm('Remove the model stored on this phone?'))NativeBridge.removeModel(); };
   $('voiceSel').onfocus=()=>NativeBridge.getVoices();
   $('mute').onclick=()=>{ muted=!muted; $('mute').style.opacity=muted?.4:1; if(muted){q=[];NativeBridge.stopSpeaking();talking=false;} };
+  try{ $('ver').textContent='English Ai '+NativeBridge.getInfo(); }catch(e){}
   NativeBridge.getVoices();
   $('voiceSel').onchange=e=>{ S.voice=e.target.value; sv('echo.set',S); };
 }
