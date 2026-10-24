@@ -53,6 +53,17 @@ jobs:
             exit 1
           fi
 
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path('android-native/app/src/main/assets/www/index.html').read_text(encoding='utf-8')
+          scripts = re.findall(r'<script(?:\\s[^>]*)?>([\\s\\S]*?)</script>', html, re.IGNORECASE)
+          if len(scripts) != 1:
+              raise SystemExit(f'Expected one inline application script, found {len(scripts)}')
+          Path('/tmp/english-ai-inline.js').write_text(scripts[0], encoding='utf-8')
+          PY
+          node --check /tmp/english-ai-inline.js
+
       - name: Compile debug APK
         working-directory: android-native
         run: gradle assembleDebug --stacktrace
@@ -63,7 +74,7 @@ jobs:
           if-no-files-found: error
       - name: Package editable source for external review
         run: |
-          zip -r English-Ai-Source-Claude.zip . -x ".git/*" "android-native/app/build/*" ".gradle/*"
+          zip -r English-Ai-Source-Claude.zip . -x ".git/*" "android-native/app/build/*" "android-native/build/*" "android-native/.gradle/*" "android-twa/app/build/*" "android-twa/build/*" "android-twa/.gradle/*" ".gradle/*" "English-Ai-Source-Claude.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: English-Ai-Source-Claude
