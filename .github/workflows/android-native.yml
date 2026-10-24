@@ -10,6 +10,9 @@ on:
       - 'icon-512.png'
       - 'icon-maskable-512.png'
       - '.github/workflows/android-native.yml'
+concurrency:
+  group: native-android-build-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
