@@ -393,7 +393,7 @@ if (window.NativeBridge) {
     nativeTokenHandler = piece => { if(alive())on(piece); };
     nativeDone = err => err ? reject(err) : resolve();
     const history=msgs.slice(-12).map(m=>({role:m.r==='me'?'user':'model',content:m.t}));
-    NativeBridge.generate(JSON.stringify({system:SYS,messages:history}));
+    NativeBridge.generate(JSON.stringify({system:SYS,chat:curId,count:msgs.length,messages:history}));
   });
   pump = function(){ if(talking||!q.length)return; const s=q.shift(); talking=true; nativeSpeakingText=s; nativeSpeakingId=String(Date.now())+String(Math.random()); setState('speaking'); showCap(s,-1); NativeBridge.speak(nativeSpeakingId,s,String(S.rate),String(S.voice||'')); };
   stopAll = function(){ gen++; q=[]; talking=false; busy=false; NativeBridge.cancelGenerate(); NativeBridge.stopSpeaking(); if(nativeListening)NativeBridge.cancelListening(); nativeListening=false; rec=null; persist(); setState('idle'); };
