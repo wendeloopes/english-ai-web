@@ -114,7 +114,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         if (modelLoadFailure != null) throw IllegalStateException(modelLoadFailure)
         val root = JSONObject(json); val arr = root.optJSONArray("messages") ?: JSONArray(); val messages = mutableListOf<Pair<String, String>>()
         for (i in 0 until arr.length()) { val m = arr.getJSONObject(i); messages += Pair(m.optString("role"), m.optString("content")) }
-        engine.generate(root.optString("system"), messages) { piece -> if (!cancelled) call("onToken", JSONObject.quote(piece)) }
+        engine.generate(root.optString("chat"), root.optInt("count", messages.size), root.optString("system"), messages) { piece -> if (!cancelled) call("onToken", JSONObject.quote(piece)) }
         call("onGenDone")
     } catch (e: Exception) { if (cancelled) call("onGenDone") else call("onGenError", JSONObject.quote(e.message ?: "Model generation failed.")) } } }
     @JavascriptInterface fun cancelGenerate() { cancelled = true; engine.cancel() }
