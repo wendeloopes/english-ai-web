@@ -92,6 +92,8 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     }
     @JavascriptInterface fun pickModel() = main.post { choose() }
     fun importModel(uri: Uri) { worker.execute {
+        // Release the loaded engine before replacing a large model file to reduce peak RAM use.
+        engine.close()
         val temp = File(activity.filesDir, "model.tmp")
         try {
             val meta = activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
