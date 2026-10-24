@@ -28,6 +28,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     private var recognizer: SpeechRecognizer? = null
     @Volatile private var cancelled = false
     @Volatile private var listening = false
+    @Volatile private var modelLoadFailure: String? = null
     private val modelFile get() = File(activity.filesDir, "model.litertlm")
     private val legacyModelFile get() = File(activity.filesDir, "model.bin")
     private fun migrateLegacyModelIfNeeded() {
@@ -53,7 +54,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     }
     private fun call(name: String, vararg args: String) { val code = "window.Native && window.Native." + name + " && window.Native." + name + "(" + args.joinToString(",") + ")"; main.post { web.evaluateJavascript(code, null) } }
     private fun status(ok: Boolean, label: String, msg: String) = call("onModelStatus", ok.toString(), JSONObject.quote(label), JSONObject.quote(msg))
-    @JavascriptInterface fun loadModel() { try { migrateLegacyModelIfNeeded() } catch (e: Exception) { status(false, "Model error", e.message ?: "Could not prepare the model file."); return }; if (!modelFile.exists()) { status(false, "Demo mode", "Choose your compatible local .litertlm model file in Settings."); return }; loadPath() }
+    @JavascriptInterface fun loadModel() { try { migrateLegacyModelIfNeeded() } catch (e: Exception) { status(false, "Model error", e.message ?: "Could not prepare the model file."); return }; if (!modelFile.exists()) { modelLoadFailure = "No local model is installed. Open Settings, choose a compatible .litertlm file, and wait until the status says Model ready."; status(false, "Model required", "No model is installed on this phone. Open Settings and import a compatible .litertlm file. The app can display the interface without a model, but AI replies need one."); return }; loadPath() }
     private fun loadPath() {
         // Check available system RAM before native inference. If the model is too large
         // for the current memory headroom, refuse to load rather than risk an Android OOM
@@ -66,16 +67,21 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         if (memory.availMem < requiredHeadroom) {
             val availableMb = memory.availMem / (1024L * 1024L)
             val modelMb = modelBytes / (1024L * 1024L)
-            status(false, "Not enough free memory", "For safety, the model was not started. Model: ${modelMb} MB; currently available RAM: ${availableMb} MB. Close other apps and restart the phone before trying again. If the phone still restarts, this model is too demanding for this device.")
+            val detail = "For safety, the model was not started. Model: ${modelMb} MB; currently available RAM: ${availableMb} MB. Close other apps, restart the phone, and try again. If this repeats, use a smaller compatible .litertlm model. The app will not bypass this safety check because a previous load can destabilize the phone."
+            modelLoadFailure = detail
+            status(false, "Not enough free memory", detail)
             return
         }
+        modelLoadFailure = "The model is still loading. Wait for the Model ready status before sending a message."
         status(false, "Loading model safely…", "Available RAM check passed. Loading with the CPU backend to reduce GPU-driver instability.")
         worker.execute {
             try {
                 engine.load(modelFile.absolutePath)
+                modelLoadFailure = null
                 status(true, "Model ready · offline", "Model loaded in stability mode (CPU). Replies may be slower, but this avoids GPU initialization on this device.")
             } catch (e: Exception) {
-                status(false, "Model error", e.message ?: "Could not load this model file.")
+                modelLoadFailure = e.message ?: "Could not load this model file. Check that it is a compatible LiteRT-LM .litertlm model."
+                status(false, "Model error", modelLoadFailure!!)
             }
         }
     }
@@ -96,8 +102,9 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
             loadPath()
         } catch (e: Exception) { temp.delete(); status(false, "Import failed", e.message ?: "Could not import model.") }
     } }
-    @JavascriptInterface fun removeModel() { worker.execute { engine.close(); modelFile.delete(); File(activity.filesDir, "model.tmp").delete(); status(false, "Demo mode", "Model removed from this phone.") } }
+    @JavascriptInterface fun removeModel() { worker.execute { engine.close(); modelFile.delete(); File(activity.filesDir, "model.tmp").delete(); modelLoadFailure = "The local model was removed. Import a compatible .litertlm file in Settings before starting an AI conversation."; status(false, "Demo mode", "Model removed from this phone.") } }
     @JavascriptInterface fun generate(json: String) { cancelled = false; worker.execute { try {
+        if (modelLoadFailure != null) throw IllegalStateException(modelLoadFailure)
         val root = JSONObject(json); val arr = root.optJSONArray("messages") ?: JSONArray(); val messages = mutableListOf<Pair<String, String>>()
         for (i in 0 until arr.length()) { val m = arr.getJSONObject(i); messages += Pair(m.optString("role"), m.optString("content")) }
         engine.generate(root.optString("system"), messages) { piece -> if (!cancelled) call("onToken", JSONObject.quote(piece)) }
