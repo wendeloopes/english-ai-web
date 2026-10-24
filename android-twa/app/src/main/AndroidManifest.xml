@@ -10,13 +10,16 @@
         android:usesCleartextTraffic="false">
         <activity
             android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
-            android:configChanges="orientation|screenSize"
+            android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.EnglishAi">
             <meta-data
                 android:name="android.support.customtabs.trusted.DEFAULT_URL"
                 android:value="https://wendeloopes.github.io/english-ai-web/" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.FALLBACK_STRATEGY"
+                android:value="webview" />
             <meta-data
                 android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
                 android:resource="@color/ic_launcher_background" />
