@@ -33,7 +33,8 @@ class MainActivity : ComponentActivity() {
                 loader.shouldInterceptRequest(request.url)
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
-                bridge.loadModel()
+                // The page's Native adapter calls Brain.load() once after its UI initializes.
+                // Avoid loading the same multi-GB model twice during startup.
                 bridge.refreshVoices()
             }
         }
