@@ -45,3 +45,11 @@ jobs:
           name: English-Ai-Native-debug-apk
           path: android-native/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: Package editable source for external review
+        run: |
+          zip -r English-Ai-Source-Claude.zip . -x ".git/*" "android-native/app/build/*" ".gradle/*"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: English-Ai-Source-Claude
+          path: English-Ai-Source-Claude.zip
+          if-no-files-found: error
