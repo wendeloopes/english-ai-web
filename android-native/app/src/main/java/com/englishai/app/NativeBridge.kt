@@ -54,7 +54,31 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     private fun call(name: String, vararg args: String) { val code = "window.Native && window.Native." + name + " && window.Native." + name + "(" + args.joinToString(",") + ")"; main.post { web.evaluateJavascript(code, null) } }
     private fun status(ok: Boolean, label: String, msg: String) = call("onModelStatus", ok.toString(), JSONObject.quote(label), JSONObject.quote(msg))
     @JavascriptInterface fun loadModel() { try { migrateLegacyModelIfNeeded() } catch (e: Exception) { status(false, "Model error", e.message ?: "Could not prepare the model file."); return }; if (!modelFile.exists()) { status(false, "Demo mode", "Choose your compatible local .litertlm model file in Settings."); return }; loadPath() }
-    private fun loadPath() { status(false, "Loading model…", "Initializing the local model; this may take several seconds."); worker.execute { try { engine.load(modelFile.absolutePath); status(true, "Gemma ready · offline", "Model ready. Inference runs locally on this phone.") } catch (e: Exception) { status(false, "Model error", e.message ?: "Could not load this model file.") } } }
+    private fun loadPath() {
+        // Check available system RAM before native inference. If the model is too large
+        // for the current memory headroom, refuse to load rather than risk an Android OOM
+        // that freezes or restarts the device.
+        val modelBytes = modelFile.length()
+        val activityManager = activity.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val memory = android.app.ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memory)
+        val requiredHeadroom = maxOf(1536L * 1024L * 1024L, modelBytes * 2L + 768L * 1024L * 1024L)
+        if (memory.availMem < requiredHeadroom) {
+            val availableMb = memory.availMem / (1024L * 1024L)
+            val modelMb = modelBytes / (1024L * 1024L)
+            status(false, "Not enough free memory", "For safety, the model was not started. Model: ${modelMb} MB; currently available RAM: ${availableMb} MB. Close other apps and restart the phone before trying again. If the phone still restarts, this model is too demanding for this device.")
+            return
+        }
+        status(false, "Loading model safely…", "Available RAM check passed. Loading with the CPU backend to reduce GPU-driver instability.")
+        worker.execute {
+            try {
+                engine.load(modelFile.absolutePath)
+                status(true, "Model ready · offline", "Model loaded in stability mode (CPU). Replies may be slower, but this avoids GPU initialization on this device.")
+            } catch (e: Exception) {
+                status(false, "Model error", e.message ?: "Could not load this model file.")
+            }
+        }
+    }
     @JavascriptInterface fun pickModel() = main.post { choose() }
     fun importModel(uri: Uri) { worker.execute {
         val temp = File(activity.filesDir, "model.tmp")
