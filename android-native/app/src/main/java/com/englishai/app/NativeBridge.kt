@@ -52,7 +52,8 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
             val meta = activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
             var name = "model"; var expected = -1L
             meta.use { c -> if (c != null && c.moveToFirst()) { name = c.getString(0) ?: "model"; if (!c.isNull(1)) expected = c.getLong(1) } }
-            // Keep the source brief contract: accept any selected filename and persist as model.bin.\n            // LiteRT-LM validates actual format during load; extension alone is not a compatibility test.
+            // Keep the source brief contract: accept any selected filename and persist as model.bin.
+            // LiteRT-LM validates actual format during load; extension alone is not a compatibility test.
             activity.contentResolver.openInputStream(uri).use { input -> requireNotNull(input) { "Could not open selected file." }.use { src -> temp.outputStream().use { dst -> val buf = ByteArray(1024 * 1024); var n: Int; var total = 0L; while (src.read(buf).also { n = it } > 0) { dst.write(buf, 0, n); total += n; if (expected > 0) call("onModelProgress", (total.toDouble() / expected).coerceIn(0.0, 1.0).toString()) } } } }
             require(temp.length() > 1024 * 1024) { "The selected file is too small to be a language model." }
             if (modelFile.exists()) modelFile.delete()
