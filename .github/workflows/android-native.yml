@@ -37,6 +37,22 @@ jobs:
           cp icon-192.png icon-512.png icon-maskable-512.png android-native/app/src/main/assets/www/
           mkdir -p android-native/app/src/main/res/drawable-nodpi
           cp icon-512.png android-native/app/src/main/res/drawable-nodpi/ic_launcher.png
+      - name: Verify native integration contract
+        run: |
+          HTML=android-native/app/src/main/assets/www/index.html
+          BRIDGE=android-native/app/src/main/java/com/englishai/app/NativeBridge.kt
+          ENGINE=android-native/app/src/main/java/com/englishai/app/LiteRtEngine.kt
+          grep -q 'chat:curId,count:msgs.length' "$HTML"
+          grep -q 'engine.generate(root.optString("chat"), root.optInt("count"' "$BRIDGE"
+          grep -q 'engine.load(modelFile.absolutePath, totalRam())' "$BRIDGE"
+          grep -q 'fun load(path: String, totalRamBytes: Long)' "$ENGINE"
+          grep -q 'maxNumTokens = tokens' "$ENGINE"
+          grep -q 'trimConversation()' "$ENGINE"
+          if grep -rnE 'estimated minimum|requiredHeadroom|availMem' android-native/app/src; then
+            echo 'Obsolete free-RAM guard detected; review the memory strategy.'
+            exit 1
+          fi
+
       - name: Compile debug APK
         working-directory: android-native
         run: gradle assembleDebug --stacktrace
