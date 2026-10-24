@@ -13,21 +13,24 @@ import kotlinx.coroutines.runBlocking
 
 /**
  * LiteRT-LM owner.
- * Stability-first configuration: CPU backend avoids GPU-driver memory spikes on
- * mid-range phones. Keep only a bounded conversation window to limit KV-cache use.
+ * CPU backend is the conservative baseline for device stability.
+ * A bounded token budget and reuse of the active conversation reduce repeated setup work.
  */
 class LiteRtEngine(private val context: Context) {
     @Volatile private var engine: Engine? = null
     @Volatile private var conversation: Conversation? = null
+    @Volatile private var cancelled = false
+    private var conversationChat = ""
+    private var conversationMessageCount = -1
+    private var conversationTurns = 0
 
     @Synchronized fun load(path: String) {
         close()
-        // Deliberately use CPU first. A GPU driver failure can destabilize the whole
-        // device, while CPU is supported by LiteRT-LM and is safer as a baseline.
         val candidate = Engine(
             EngineConfig(
                 modelPath = path,
                 backend = Backend.CPU(),
+                maxNumTokens = 2048,
                 cacheDir = context.cacheDir.absolutePath
             )
         )
@@ -35,50 +38,86 @@ class LiteRtEngine(private val context: Context) {
             candidate.initialize()
             engine = candidate
         } catch (e: Exception) {
-            // An Engine whose initialize() failed may not be safely closable in all
-            // LiteRT-LM versions; swallow cleanup errors and propagate the real error.
             try { candidate.close() } catch (_: Exception) {}
             throw e
         }
     }
 
-    fun generate(system: String, messages: List<Pair<String, String>>, onToken: (String) -> Unit) = runBlocking {
+    private fun dropConversation() {
+        try { conversation?.close() } catch (_: Exception) {}
+        conversation = null
+        conversationChat = ""
+        conversationMessageCount = -1
+        conversationTurns = 0
+    }
+
+    /**
+     * count is the current number of messages in the UI, including the newest user message.
+     * Reuse only for the same chat and sequential messages; rebuild periodically to bound context.
+     */
+    fun generate(
+        chat: String,
+        count: Int,
+        system: String,
+        messages: List<Pair<String, String>>,
+        onToken: (String) -> Unit
+    ) = runBlocking {
         val e = checkNotNull(engine) { "Load a compatible .litertlm model in Settings first." }
         val lastIndex = messages.indexOfLast { it.first == "user" }
         require(lastIndex >= 0) { "No user message was provided." }
+        cancelled = false
 
-        // Limit prompt size and history so the conversation KV cache does not grow
-        // without bound during a long session. Keep the most recent 8 messages.
-        val bounded = messages.take(lastIndex).takeLast(8).mapNotNull { (role, rawText) ->
-            val text = rawText.take(1200)
-            when (role) {
-                "user" -> Message.user(text)
-                "model", "assistant" -> Message.model(text)
-                else -> null
+        val reuse = conversation != null &&
+            chat.isNotEmpty() &&
+            chat == conversationChat &&
+            count == conversationMessageCount + 2 &&
+            conversationTurns < 5
+
+        if (!reuse) {
+            val keep = if (conversationTurns >= 5) 4 else 8
+            dropConversation()
+            val bounded = messages.take(lastIndex).takeLast(keep).mapNotNull { (role, rawText) ->
+                val text = rawText.take(1000)
+                when (role) {
+                    "user" -> Message.user(text)
+                    "model", "assistant" -> Message.model(text)
+                    else -> null
+                }
             }
+            conversation = e.createConversation(
+                ConversationConfig(
+                    systemInstruction = Contents.of(system.take(1200)),
+                    initialMessages = bounded
+                )
+            )
+            conversationChat = chat
+            conversationTurns = 0
         }
-        val safeSystem = system.take(1500)
-        val config = ConversationConfig(
-            systemInstruction = Contents.of(safeSystem),
-            initialMessages = bounded
-        )
-        val c = e.createConversation(config)
-        conversation = c
+
+        val c = checkNotNull(conversation)
+        var completed = false
         try {
-            c.sendMessageAsync(messages[lastIndex].second.take(1200)).collect { chunk ->
-                onToken(chunk.toString())
+            c.sendMessageAsync(messages[lastIndex].second.take(1000)).collect { chunk ->
+                if (!cancelled) onToken(chunk.toString())
             }
+            completed = !cancelled
         } finally {
-            conversation = null
-            try { c.close() } catch (_: Exception) {}
+            if (completed) {
+                conversationMessageCount = count
+                conversationTurns++
+            } else {
+                dropConversation()
+            }
         }
     }
 
-    fun cancel() { try { conversation?.cancelProcess() } catch (_: Exception) {} }
+    fun cancel() {
+        cancelled = true
+        try { conversation?.cancelProcess() } catch (_: Exception) {}
+    }
 
     @Synchronized fun close() {
-        try { conversation?.close() } catch (_: Exception) {}
-        conversation = null
+        dropConversation()
         try { engine?.close() } catch (_: Exception) {}
         engine = null
     }
