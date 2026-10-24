@@ -143,14 +143,16 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
                 override fun onEndOfSpeech() { listening = false }
                 override fun onError(error: Int) {
                     listening = false
-                    if (error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED && useOnDevice) {
-                        // Some Android builds advertise on-device recognition but its service
-                        // disconnects. Retry with the system recognizer instead of stopping cold.
+                    if ((error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED ||
+                         error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) && useOnDevice) {
+                        // On some phones, on-device English recognition is advertised but its
+                        // language pack is missing or its service disconnects. Retry once with
+                        // Android's default recognizer, which may use the installed online service.
                         main.postDelayed({ if (!listening) beginListening(useOnDevice = false) }, 250)
                     } else {
                         val detail = when (error) {
                             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Android denied microphone access."
-                            SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "English (United States) speech data is not installed."
+                            SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "English speech recognition is unavailable on this phone. Install/update the Google app and Speech Recognition service, then download English (United States) speech/language data in their settings. You can still type your answer."
                             SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> "Android's speech recognition service disconnected. Check or update the Speech Recognition service in system settings."
                             else -> "Speech recognition error ($error). You can type instead."
                         }
