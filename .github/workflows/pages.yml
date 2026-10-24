@@ -29,12 +29,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
         with:
           enablement: true
-      - name: Prepare site files
+      - name: Prepare site files and self-host LiteRT-LM
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p _site
           cp index.html sw.js manifest.json icon-*.png _site/
           python -m json.tool _site/manifest.json >/dev/null
@@ -42,20 +48,34 @@ jobs:
           test -f _site/sw.js
           test -f _site/icon-192.png
           test -f _site/icon-512.png
-          # Self-host MediaPipe so the app can cache its engine for offline use.
-          # Keep this pinned version aligned with VERS in index.html.
-          BASE="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.27"
-          VENDOR="_site/vendor/mediapipe/tasks-genai/0.10.27"
+
+          # Pin a known-compatible LiteRT-LM version; do not use npm's moving latest tag.
+          npm install --prefix .build --no-save --no-audit --no-fund @litert-lm/core@0.18.0 esbuild
+          PKG=".build/node_modules/@litert-lm/core"
+          VENDOR="_site/vendor/litert-lm/0.18.0"
+          test -s "$PKG/dist/index.js"
+          test -d "$PKG/wasm"
           mkdir -p "$VENDOR/wasm"
-          curl -fsSL --retry 3 "$BASE/genai_bundle.mjs" -o "$VENDOR/genai_bundle.mjs"
-          curl -fsSL --retry 3 "$BASE/wasm/genai_wasm_internal.js" -o "$VENDOR/wasm/genai_wasm_internal.js"
-          curl -fsSL --retry 3 "$BASE/wasm/genai_wasm_internal.wasm" -o "$VENDOR/wasm/genai_wasm_internal.wasm"
-          curl -fsSL --retry 3 "$BASE/wasm/genai_wasm_nosimd_internal.js" -o "$VENDOR/wasm/genai_wasm_nosimd_internal.js"
-          curl -fsSL --retry 3 "$BASE/wasm/genai_wasm_nosimd_internal.wasm" -o "$VENDOR/wasm/genai_wasm_nosimd_internal.wasm"
-          curl -fsSL --retry 3 "https://www.apache.org/licenses/LICENSE-2.0.txt" -o "$VENDOR/LICENSE-2.0.txt"
-          test -s "$VENDOR/genai_bundle.mjs"
-          test -s "$VENDOR/wasm/genai_wasm_internal.wasm"
-          test -s "$VENDOR/wasm/genai_wasm_nosimd_internal.wasm"
+          .build/node_modules/.bin/esbuild "$PKG/dist/index.js" --bundle --format=esm --platform=browser --target=es2022 --outfile="$VENDOR/litert-lm.js"
+          cp -R "$PKG/wasm/." "$VENDOR/wasm/"
+          if [ -f "$PKG/LICENSE" ]; then cp "$PKG/LICENSE" "$VENDOR/LICENSE"; else curl -fsSL --retry 3 "https://www.apache.org/licenses/LICENSE-2.0.txt" -o "$VENDOR/LICENSE-2.0.txt"; fi
+          test -s "$VENDOR/litert-lm.js"
+          find "$VENDOR/wasm" -type f -size +0c | grep -q .
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("_site")
+          vendor = root / "vendor/litert-lm/0.18.0"
+          files = [
+              p.relative_to(root).as_posix()
+              for p in sorted(vendor.rglob("*"))
+              if p.is_file() and p.name != "assets.json"
+          ]
+          if not any(p.endswith(".wasm") for p in files):
+              raise SystemExit("LiteRT-LM WASM files are missing")
+          (vendor / "assets.json").write_text(json.dumps(files, separators=(",", ":")))
+          print(f"Prepared {len(files)} LiteRT-LM runtime files for offline caching")
+          PY
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
