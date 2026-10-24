@@ -31,7 +31,7 @@ jobs:
           import re
           from pathlib import Path
           html = Path("index.html").read_text()
-          match = re.search(r"<script>([\\s\\S]*?)</script>", html)
+          match = re.search(r"<script>(.*?)</script>", html, re.S)
           if not match:
               raise SystemExit("Inline app script not found")
           Path("/tmp/english-ai.js").write_text(match.group(1))
