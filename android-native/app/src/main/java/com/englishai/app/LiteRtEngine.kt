@@ -23,15 +23,20 @@ class LiteRtEngine(private val context: Context) {
     private var conversationChat = ""
     private var conversationMessageCount = -1
     private var conversationTurns = 0
+    private var historyKeep = 8
 
-    @Synchronized fun load(path: String) {
+    @Synchronized fun load(path: String, totalRamBytes: Long) {
         close()
+        val gb = totalRamBytes / (1024.0 * 1024.0 * 1024.0)
+        val tokens = when { gb >= 7.0 -> 2048; gb >= 5.0 -> 1536; else -> 1024 }
+        historyKeep = when { gb >= 7.0 -> 8; gb >= 5.0 -> 6; else -> 4 }
+        val cache = java.io.File(context.filesDir, "litert-cache").apply { mkdirs() }
         val candidate = Engine(
             EngineConfig(
                 modelPath = path,
                 backend = Backend.CPU(),
-                maxNumTokens = 2048,
-                cacheDir = context.cacheDir.absolutePath
+                maxNumTokens = tokens,
+                cacheDir = cache.absolutePath
             )
         )
         try {
@@ -74,7 +79,7 @@ class LiteRtEngine(private val context: Context) {
             conversationTurns < 5
 
         if (!reuse) {
-            val keep = if (conversationTurns >= 5) 4 else 8
+            val keep = if (conversationTurns >= 5) minOf(4, historyKeep) else historyKeep
             dropConversation()
             val bounded = messages.take(lastIndex).takeLast(keep).mapNotNull { (role, rawText) ->
                 val text = rawText.take(1000)
@@ -110,6 +115,8 @@ class LiteRtEngine(private val context: Context) {
             }
         }
     }
+
+    @Synchronized fun trimConversation() { dropConversation() }
 
     fun cancel() {
         cancelled = true
