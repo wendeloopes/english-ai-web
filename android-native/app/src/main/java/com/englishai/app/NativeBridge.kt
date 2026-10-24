@@ -28,7 +28,17 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     private var recognizer: SpeechRecognizer? = null
     @Volatile private var cancelled = false
     @Volatile private var listening = false
-    private val modelFile get() = File(activity.filesDir, "model.bin")
+    private val modelFile get() = File(activity.filesDir, "model.litertlm")
+    private val legacyModelFile get() = File(activity.filesDir, "model.bin")
+    private fun migrateLegacyModelIfNeeded() {
+        // Older builds saved the model as model.bin. LiteRT-LM dispatches by extension,
+        // so migrate the same bytes to the required .litertlm filename without re-importing.
+        if (!modelFile.exists() && legacyModelFile.exists()) {
+            check(legacyModelFile.renameTo(modelFile)) {
+                "The previous model could not be renamed to .litertlm. Please import it again."
+            }
+        }
+    }
     init {
         tts = TextToSpeech(activity) { status -> if (status == TextToSpeech.SUCCESS) {
             tts?.language = Locale.US
@@ -43,7 +53,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     }
     private fun call(name: String, vararg args: String) { val code = "window.Native && window.Native." + name + " && window.Native." + name + "(" + args.joinToString(",") + ")"; main.post { web.evaluateJavascript(code, null) } }
     private fun status(ok: Boolean, label: String, msg: String) = call("onModelStatus", ok.toString(), JSONObject.quote(label), JSONObject.quote(msg))
-    @JavascriptInterface fun loadModel() { if (!modelFile.exists()) { status(false, "Demo mode", "Choose your compatible local model file in Settings."); return }; loadPath() }
+    @JavascriptInterface fun loadModel() { try { migrateLegacyModelIfNeeded() } catch (e: Exception) { status(false, "Model error", e.message ?: "Could not prepare the model file."); return }; if (!modelFile.exists()) { status(false, "Demo mode", "Choose your compatible local .litertlm model file in Settings."); return }; loadPath() }
     private fun loadPath() { status(false, "Loading model…", "Initializing the local model; this may take several seconds."); worker.execute { try { engine.load(modelFile.absolutePath); status(true, "Gemma ready · offline", "Model ready. Inference runs locally on this phone.") } catch (e: Exception) { status(false, "Model error", e.message ?: "Could not load this model file.") } } }
     @JavascriptInterface fun pickModel() = main.post { choose() }
     fun importModel(uri: Uri) { worker.execute {
@@ -54,9 +64,11 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
             meta.use { c -> if (c != null && c.moveToFirst()) { if (!c.isNull(1)) expected = c.getLong(1) } }
             activity.contentResolver.openInputStream(uri).use { input -> requireNotNull(input) { "Could not open selected file." }.use { src -> temp.outputStream().use { dst -> val buf = ByteArray(1024 * 1024); var n: Int; var total = 0L; while (src.read(buf).also { n = it } > 0) { dst.write(buf, 0, n); total += n; if (expected > 0) call("onModelProgress", (total.toDouble() / expected).coerceIn(0.0, 1.0).toString()) } } } }
             require(temp.length() > 1024 * 1024) { "The selected file is too small to be a language model." }
+            // LiteRT-LM requires the on-disk filename to end in .litertlm. The picker display
+            // name is not trusted; we always save to this canonical filename.
             if (modelFile.exists()) modelFile.delete()
             check(temp.renameTo(modelFile)) { "Could not save the model in private app storage." }
-            status(false, "Loading model…", "Model saved (${modelFile.length() / 1024 / 1024} MB). Initializing LiteRT-LM…")
+            status(false, "Loading model…", "Model saved as ${modelFile.name} (${modelFile.length() / 1024 / 1024} MB). Initializing LiteRT-LM…")
             loadPath()
         } catch (e: Exception) { temp.delete(); status(false, "Import failed", e.message ?: "Could not import model.") }
     } }
