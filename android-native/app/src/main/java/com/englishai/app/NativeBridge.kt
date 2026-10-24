@@ -63,11 +63,16 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         val activityManager = activity.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
         val memory = android.app.ActivityManager.MemoryInfo()
         activityManager.getMemoryInfo(memory)
-        val requiredHeadroom = maxOf(1536L * 1024L * 1024L, modelBytes * 2L + 768L * 1024L * 1024L)
+        // The previous threshold (2x model size + 768 MB, with a 1.5 GB floor)
+        // rejected models too aggressively on Android, where availableMem is often
+        // reported low because the OS reclaims cache only when needed. Keep a guard,
+        // but use a more practical headroom estimate and show the exact threshold.
+        val requiredHeadroom = maxOf(1280L * 1024L * 1024L, modelBytes * 3L / 2L + 512L * 1024L * 1024L)
         if (memory.availMem < requiredHeadroom) {
             val availableMb = memory.availMem / (1024L * 1024L)
             val modelMb = modelBytes / (1024L * 1024L)
-            val detail = "For safety, the model was not started. Model: ${modelMb} MB; currently available RAM: ${availableMb} MB. Close other apps, restart the phone, and try again. If this repeats, use a smaller compatible .litertlm model. The app will not bypass this safety check because a previous load can destabilize the phone."
+            val requiredMb = requiredHeadroom / (1024L * 1024L)
+            val detail = "The model was paused to protect phone stability. Model size: ${modelMb} MB; available RAM now: ${availableMb} MB; estimated minimum: ${requiredMb} MB. Android may reclaim memory when needed, so close heavy apps and retry. If the check keeps appearing, this model may be too large for the current memory headroom; use a smaller compatible .litertlm model."
             modelLoadFailure = detail
             status(false, "Not enough free memory", detail)
             return
