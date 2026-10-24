@@ -2,7 +2,6 @@ package com.englishai.app
 
 import android.app.Activity
 import android.content.Intent
-import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -39,7 +38,6 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
                 override fun onError(id: String?) { id?.let { call("onTtsDone", JSONObject.quote(it)) } }
                 override fun onRangeStart(id: String?, start: Int, end: Int, frame: Int) { id?.let { call("onTtsRange", JSONObject.quote(it), start.toString()) } }
             })
-            // TTS initializes asynchronously; refresh after it is ready so the UI gets real voices.
             refreshVoices()
         } }
     }
@@ -52,10 +50,8 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         val temp = File(activity.filesDir, "model.tmp")
         try {
             val meta = activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
-            var name = "model"; var expected = -1L
-            meta.use { c -> if (c != null && c.moveToFirst()) { name = c.getString(0) ?: "model"; if (!c.isNull(1)) expected = c.getLong(1) } }
-            // Keep the source brief contract: accept any selected filename and persist as model.bin.
-            // LiteRT-LM validates actual format during load; extension alone is not a compatibility test.
+            var expected = -1L
+            meta.use { c -> if (c != null && c.moveToFirst()) { if (!c.isNull(1)) expected = c.getLong(1) } }
             activity.contentResolver.openInputStream(uri).use { input -> requireNotNull(input) { "Could not open selected file." }.use { src -> temp.outputStream().use { dst -> val buf = ByteArray(1024 * 1024); var n: Int; var total = 0L; while (src.read(buf).also { n = it } > 0) { dst.write(buf, 0, n); total += n; if (expected > 0) call("onModelProgress", (total.toDouble() / expected).coerceIn(0.0, 1.0).toString()) } } } }
             require(temp.length() > 1024 * 1024) { "The selected file is too small to be a language model." }
             if (modelFile.exists()) modelFile.delete()
@@ -74,7 +70,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     @JavascriptInterface fun cancelGenerate() { cancelled = true; engine.cancel() }
     @JavascriptInterface fun getVoices() { refreshVoices() }
     fun refreshVoices() { val arr = JSONArray(); tts?.voices?.filter { it.locale.language == "en" }?.forEach { v -> arr.put(JSONObject().put("name", v.name).put("lang", v.locale.toLanguageTag())) }; call("onVoices", JSONObject.quote(arr.toString())) }
-    @JavascriptInterface fun speak(id: String, text: String, rate: String, voiceName: String) { main.post { try { tts?.setSpeechRate(rate.toFloatOrNull() ?: 1f); tts?.voices?.firstOrNull { it.name == voiceName }?.let { tts?.voice = it }; tts?.speak(text, TextToSpeech.QUEUE_FLUSH, id) } catch (_: Exception) { call("onTtsDone", JSONObject.quote(id)) } } }
+    @JavascriptInterface fun speak(id: String, text: String, rate: String, voiceName: String) { main.post { try { tts?.setSpeechRate(rate.toFloatOrNull() ?: 1f); tts?.voices?.firstOrNull { it.name == voiceName }?.let { tts?.voice = it }; tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) } catch (_: Exception) { call("onTtsDone", JSONObject.quote(id)) } } }
     @JavascriptInterface fun stopSpeaking() { main.post { tts?.stop() } }
     @JavascriptInterface fun startListening() { main.post { requestMic() } }
     fun startListeningGranted() { main.post {
