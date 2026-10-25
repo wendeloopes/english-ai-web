@@ -190,6 +190,10 @@ progress{width:100%;height:6px;margin-top:8px;display:none}
   <div class="row"><div>Hands-free<small>Listen again right after she finishes. Use headphones.</small></div><button class="sw" id="tHands" role="switch"></button></div>
   <div class="row"><div>Delete all conversations</div><button class="btn g" id="wipe">Delete</button></div>
   <div class="row"><div>Your name<small>The AI will call you by it.</small></div><input class="txt" id="nameIn" maxlength="24" placeholder="Wendel" autocomplete="off"></div>
+  <div class="row"><div>Morning routine <small>Active conversation window</small></div><div style="display:flex;gap:5px"><input type="time" id="morningStart" value="04:30" aria-label="Morning start"><input type="time" id="morningEnd" value="07:30" aria-label="Morning end"></div></div>
+  <div class="row"><div>Evening routine <small>Active conversation window</small></div><div style="display:flex;gap:5px"><input type="time" id="eveningStart" value="18:30" aria-label="Evening start"><input type="time" id="eveningEnd" value="22:00" aria-label="Evening end"></div></div>
+  <div class="row"><div>Conversation mode <small>Continuous hands-free or individual quick replies</small></div><select class="txt" id="interactionMode"><option value="continuous">Continuous session</option><option value="individual">Individual replies</option></select></div>
+  <div class="row"><div>Save assistant routine <small id="routineStatus">Set your times and save.</small></div><button class="btn" id="saveRoutine">Save</button></div>
   <div class="row"><div>Portuguese subtitles<small>Shown under the English. Never spoken.</small></div><button class="sw" id="tPt" role="switch"></button></div>
   <div class="row"><div>Plugins<small>Claude · ChatGPT · GitHub</small></div><button class="btn g" id="openPlug">Open</button></div>
   <div class="row"><div>Error log<small id="errCount">None</small></div><button class="btn g" id="openErrs">Open</button></div>
@@ -556,7 +560,22 @@ $('ghConn').onclick=async()=>{const repo=$('ghRepo').value.trim(),token=$('ghTok
     const r=await fetch('https://api.github.com/repos/'+repo,{headers:h});if(!r.ok)throw new Error('Repository not found or no access ('+r.status+')');
     sv('echo.gh',{token,repo,user:(await u.json()).login});$('ghTok').value='';ghUI();toast('GitHub connected')}catch(e){toast(e.message||'Could not connect')}};
 $('ghOff').onclick=()=>{try{localStorage.removeItem('echo.gh')}catch(e){}ghUI();toast('GitHub disconnected')};
-/* settings: name + Portuguese subtitles */
+/* settings: name + Portuguese subtitles + routines */
+const routineDefaults={morningStart:'04:30',morningEnd:'07:30',eveningStart:'18:30',eveningEnd:'22:00',interactionMode:'continuous'};
+let routines=Object.assign({},routineDefaults,ld('echo.routines',{}));
+for(const k of ['morningStart','morningEnd','eveningStart','eveningEnd','interactionMode'])$(k).value=routines[k];
+function saveRoutineSettings(){
+  for(const k of ['morningStart','morningEnd','eveningStart','eveningEnd','interactionMode'])routines[k]=$(k).value;
+  sv('echo.routines',routines);
+  const data=JSON.stringify({userName:(S.name||'').trim(),routines,interactionMode:routines.interactionMode});
+  if(NB&&typeof NativeBridge.saveUserSettings==='function'){
+    NativeBridge.saveUserSettings(data);
+    $('routineStatus').textContent='Routine saved on this phone.';
+  }else $('routineStatus').textContent='Saved in this app. Native schedule sync is available in the Android build.';
+}
+$('saveRoutine').onclick=saveRoutineSettings;
+$('nameIn').value=S.name||'';$('nameIn').oninput=e=>{S.name=e.target.value.trim().slice(0,24);sv('echo.set',S);if(NB&&typeof NativeBridge.saveUserSettings==='function')saveRoutineSettings()};
+
 $('nameIn').value=S.name||'';$('nameIn').oninput=e=>{S.name=e.target.value.trim().slice(0,24);sv('echo.set',S)};
 tg('tPt','pt');$('tPt').addEventListener('click',()=>{if(!S.pt){$('capPt').textContent='';return;} if(NB&&typeof NativeBridge.ptEnsure==='function'){ $('mstat').textContent='Preparing Portuguese subtitles…'; NativeBridge.ptEnsure(); restorePortugueseCaption(); }});
 function restorePortugueseCaption(){if(!S.pt)return;const c=cur(),last=[...c.msgs].reverse().find(m=>m.r==='ai'&&m.pt);if(last){$('capPt').textContent=last.pt;const bs=$('msgs').querySelectorAll('.b.ai');const b=bs[bs.length-1];if(b){const slot=b.querySelector('.pt');if(slot)slot.textContent=last.pt;}}}
