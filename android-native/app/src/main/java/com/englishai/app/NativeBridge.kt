@@ -169,12 +169,28 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         prefs.edit().putBoolean("morningAlarmEnabled", enabled).apply()
         if (enabled) {
             MorningAlarmReceiver.scheduleNext(activity, 4, 40)
-            call("onMorningAlarmStatus", "true", JSONObject.quote("Daily 04:40 alarm scheduled. Android may use an inexact alarm if exact-alarm access is unavailable."))
+            val alarmManager = activity.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
+            if (Build.VERSION.SDK_INT >= 31 && !alarmManager.canScheduleExactAlarms()) {
+                call("onMorningAlarmStatus", "true", JSONObject.quote("Alarm saved. Allow exact alarms in the Android screen that opens so it can ring at 04:40 rather than approximately."))
+                main.post {
+                    try {
+                        val settingsIntent = Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+                        settingsIntent.data = Uri.parse("package:" + activity.packageName)
+                        activity.startActivity(settingsIntent)
+                    } catch (_: Exception) {}
+                }
+            } else {
+                call("onMorningAlarmStatus", "true", JSONObject.quote("Daily 04:40 exact alarm scheduled."))
+            }
         } else {
             MorningAlarmReceiver.cancel(activity)
             call("onMorningAlarmStatus", "false", JSONObject.quote("Morning alarm disabled."))
         }
     }
+    fun refreshScheduledAlarm() {
+        if (isMorningAlarmEnabled()) MorningAlarmReceiver.scheduleNext(activity, 4, 40)
+    }
+
     @JavascriptInterface fun isMorningAlarmEnabled(): Boolean =
         activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE).getBoolean("morningAlarmEnabled", false)
 
