@@ -173,7 +173,17 @@ class HotwordListeningService : Service() {
                 override fun onEndOfSpeech() {}
                 override fun onPartialResults(results: android.os.Bundle?) { checkPhrase(results, false) }
                 override fun onResults(results: android.os.Bundle?) { checkPhrase(results, true); restartSoon() }
-                override fun onError(error: Int) { restartSoon() }
+                override fun onError(error: Int) {
+                    if (error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE ||
+                        error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED) {
+                        // Stay strictly offline: do not silently switch to network recognition or
+                        // repeatedly reopen a recognizer that cannot provide English (US) locally.
+                        postOfflineSpeechUnavailable()
+                        stopSelf()
+                    } else {
+                        restartSoon()
+                    }
+                }
                 override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
             })
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -247,10 +257,25 @@ class HotwordListeningService : Service() {
             .setContentIntent(openIntent).setAutoCancel(true).build())
     }
 
+    private fun postOfflineSpeechUnavailable() {
+        ensureAssistantChannels(this)
+        val n = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, ASSISTANT_CHANNEL) else Notification.Builder(this)
+        getSystemService(NotificationManager::class.java).notify(
+            4045,
+            n.setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("Offline English speech data unavailable")
+                .setContentText("In the Google app, open Settings > Voice > Offline speech recognition and download English (US). Then reopen English AI and enable voice activation.")
+                .setContentIntent(openAssistantIntent(this))
+                .setAutoCancel(true)
+                .build()
+        )
+    }
+
     private fun restartSoon() {
         if (!active || restarting) return
         restarting = true
-        android.os.Handler(mainLooper).postDelayed({ restarting = false; if (active) startRecognition() }, 700)
+        // Give Android time to release the previous offline recognizer before reopening it.
+        android.os.Handler(mainLooper).postDelayed({ restarting = false; if (active) startRecognition() }, 1200)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
