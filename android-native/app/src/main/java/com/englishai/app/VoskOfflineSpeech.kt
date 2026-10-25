@@ -99,7 +99,14 @@ class VoskOfflineSpeech(
                             val out = File(tempDir, relative)
                             if (entry.isDirectory) out.mkdirs() else {
                                 out.parentFile?.mkdirs()
-                                FileOutputStream(out).use { output -> zip.copyTo(output) }
+                                FileOutputStream(out).use { output ->
+                                    val buffer = ByteArray(32 * 1024)
+                                    while (true) {
+                                        val count = zip.read(buffer)
+                                        if (count < 0) break
+                                        output.write(buffer, 0, count)
+                                    }
+                                }
                             }
                         }
                         zip.closeEntry()
