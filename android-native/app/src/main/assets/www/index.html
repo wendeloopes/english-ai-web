@@ -315,19 +315,21 @@ select,input[type=range],.txt{background:#132844;color:#f3f7ff;border:1px solid 
   </div>
   <div class="featurelist" id="localModelPresets" style="margin-top:14px">
     <h2 style="font-size:18px;margin:4px 0">Modelos de IA</h2>
-    <p class="pageintro">Modelos locais para uso offline. Os tamanhos são estimativas da referência e variam conforme a versão e a quantização do arquivo.</p>
-    <select class="txt" id="localModelPreset" aria-label="Perfil de modelo" style="display:none"><option value="llama">Llama 3.2</option><option value="gemma">Gemma 2</option><option value="phi">Phi-3 Mini</option><option value="mistral">Mistral 7B</option><option value="auto">Detectar pelo arquivo</option></select>
+    <p class="pageintro">Arquivos LiteRT-LM verificados para download direto. Os downloads usam conexão HTTPS, barra de progresso e validação SHA-256 antes de substituir o modelo atual.</p>
+    <select class="txt" id="localModelPreset" aria-label="Perfil de modelo" style="display:none"><option value="gemma4-e2b">Gemma 4 E2B</option><option value="gemma4-e4b">Gemma 4 E4B</option><option value="llama32-1b">Llama 3.2 1B</option><option value="phi3-mini">Phi-3 Mini</option></select>
     <div id="modelPresetList" style="display:grid;gap:9px;margin-top:12px">
-      <button type="button" class="featurecard modelpreset selected" data-model-preset="llama" aria-pressed="true"><span class="featureicon">AI</span><span class="featurecopy"><b>Llama 3.2 <span class="pill">Atual · Recomendado</span></b><small>3.1 GB · Modelo local</small></span><span class="chev">✓</span></button>
-      <button type="button" class="featurecard modelpreset" data-model-preset="gemma" aria-pressed="false"><span class="featureicon">AI</span><span class="featurecopy"><b>Gemma 2</b><small>2.8 GB · Modelo local</small></span><span class="chev">›</span></button>
-      <button type="button" class="featurecard modelpreset" data-model-preset="phi" aria-pressed="false"><span class="featureicon">AI</span><span class="featurecopy"><b>Phi-3 Mini</b><small>1.7 GB · Modelo local</small></span><span class="chev">›</span></button>
-      <button type="button" class="featurecard modelpreset" data-model-preset="mistral" aria-pressed="false"><span class="featureicon">AI</span><span class="featurecopy"><b>Mistral 7B</b><small>4.1 GB · Modelo local</small></span><span class="chev">›</span></button>
+      <button type="button" class="featurecard modelpreset selected" data-model-preset="gemma4-e2b" aria-pressed="true"><span class="featureicon">AI</span><span class="featurecopy"><b>Gemma 4 E2B <span class="pill">Recomendado</span></b><small>2,59 GB · Download direto · SHA-256 verificado</small></span><span class="chev">✓</span></button>
+      <button type="button" class="featurecard modelpreset" data-model-preset="gemma4-e4b" aria-pressed="false"><span class="featureicon">AI</span><span class="featurecopy"><b>Gemma 4 E4B</b><small>3,66 GB · Download direto · Requer mais RAM</small></span><span class="chev">›</span></button>
+      <button type="button" class="featurecard modelpreset" data-model-preset="llama32-1b" aria-pressed="false"><span class="featureicon">AI</span><span class="featurecopy"><b>Llama 3.2 1B</b><small>920 MB · Exige aceitar a licença da Meta antes de baixar</small></span><span class="chev">›</span></button>
+      <button type="button" class="featurecard modelpreset" data-model-preset="phi3-mini" aria-pressed="false"><span class="featureicon">AI</span><span class="featurecopy"><b>Phi-3 Mini</b><small>3,58 GiB · Arquivo disponível; download direto ainda não verificado neste catálogo</small></span><span class="chev">›</span></button>
     </div>
     <div style="display:grid;gap:9px;margin-top:16px">
-      <button class="btn" id="downloadStrongerModel" type="button">Baixar um novo modelo mais poderoso</button>
+      <button class="btn" id="downloadStrongerModel" type="button">Baixar modelo selecionado</button>
       <button class="btn g" id="choosePresetModel" type="button">Carregar modelo existente</button>
+      <progress id="modelDownloadProgress" max="1" value="0" aria-label="Progresso do download" style="display:none"></progress>
+      <p class="pagefootnote" id="modelDownloadStatus" role="status" aria-live="polite">Selecione um modelo. O arquivo atual só será substituído depois que o download e a integridade forem verificados.</p>
     </div>
-    <p class="pagefootnote">Escolher um perfil não baixa nem converte um modelo automaticamente. O arquivo precisa ser compatível com o motor LiteRT-LM instalado. Para usar Gemini, selecione o modo online abaixo e forneça sua chave de API; offline continua sendo o padrão.</p>
+    <p class="pagefootnote">O catálogo de download direto contém apenas arquivos com origem e hash conhecidos. Llama 3.2 abre a página oficial porque requer aceitação de licença; Phi-3 Mini ainda não está habilitado para download direto aqui. Para usar Gemini, selecione o modo online abaixo e forneça sua chave de API; offline continua sendo o padrão.</p>
   </div>
   <div class="featurelist" id="aiModePanel" style="margin-top:14px">
     <h2 style="font-size:18px;margin:4px 0">Modo de IA</h2>
@@ -704,8 +706,22 @@ if (window.NativeBridge) {
   try{ $('ver').textContent='English Ai '+NativeBridge.getInfo(); }catch(e){}
   let nativeTokenHandler=null, nativeDone=null, nativeSpeakingId='', nativeListening=false, nativeMicLevel=0;
   window.Native = window.Native || {};
-  window.Native.onModelStatus = (ok,label,msg) => { setStatus(label || (ok?'Gemma ready · offline':'Demo mode'),!!ok); $('prog').style.display='none'; if(msg) $('mstat').textContent=msg; };
+  window.Native.onModelStatus = (ok,label,msg) => {
+    const text=label || (ok?'Model ready · offline':'Demo mode');
+    setStatus(text,!!ok); $('prog').style.display='none'; if(msg) $('mstat').textContent=msg;
+    if($('modelDownloadStatus')) $('modelDownloadStatus').textContent=(msg||text);
+    if($('modelDownloadProgress') && !/Downloading model/i.test(text)) $('modelDownloadProgress').style.display='none';
+  };
   window.Native.onModelProgress = p => { $('prog').style.display='block'; $('prog').value=Math.max(0,Math.min(1,Number(p)||0)); };
+  window.Native.onModelDownloadProgress = (p,received,total,name) => {
+    const bar=$('modelDownloadProgress'),label=$('modelDownloadStatus');
+    if(bar){bar.style.display='block';bar.value=Math.max(0,Math.min(1,Number(p)||0));}
+    if(label){
+      const got=Math.max(0,Number(received)||0),all=Number(total)||0;
+      const fmt=n=>n>=1e9?(n/1e9).toFixed(2)+' GB':(n/1e6).toFixed(0)+' MB';
+      label.textContent=all>0?'Baixando '+(name||'modelo')+': '+Math.round(Math.max(0,Math.min(1,Number(p)||0))*100)+'% ('+fmt(got)+' / '+fmt(all)+')':'Baixando '+(name||'modelo')+': '+fmt(got)+' recebidos…';
+    }
+  };
   window.Native.onToken = piece => { if(nativeTokenHandler) nativeTokenHandler(piece); };
   window.Native.onGenDone = () => { const done=nativeDone; nativeDone=null; nativeTokenHandler=null; if(done)done(); };
   window.Native.onGenError = msg => { const done=nativeDone; nativeDone=null; nativeTokenHandler=null; cap(esc(msg||'Generation failed')); setState('idle'); if(done)done(msg||'Generation failed'); };
@@ -1008,7 +1024,13 @@ function selectModelPreset(name){
   });
 }
 document.querySelectorAll('#modelPresetList [data-model-preset]').forEach(button=>button.addEventListener('click',()=>selectModelPreset(button.dataset.modelPreset)));
-$('downloadStrongerModel')?.addEventListener('click',()=>openUrl('https://github.com/google-ai-edge/LiteRT-LM'));
+$('downloadStrongerModel')?.addEventListener('click',()=>{
+  const model=$('localModelPreset')?.value||'gemma4-e2b';
+  if(model==='llama32-1b'){openUrl('https://huggingface.co/litert-community/Llama-3.2-1B');if($('modelDownloadStatus'))$('modelDownloadStatus').textContent='Aceite a licença da Meta e confirme o acesso na página oficial. Depois, baixe o arquivo .litertlm e use “Carregar modelo existente”.';return;}
+  if(model==='phi3-mini'){openUrl('https://huggingface.co/litert-community/Phi-3-mini-4k-instruct');if($('modelDownloadStatus'))$('modelDownloadStatus').textContent='Este arquivo não está habilitado para download direto verificado nesta versão. Consulte a página oficial e carregue um arquivo .litertlm compatível.';return;}
+  try{if(NB&&typeof NativeBridge.downloadModel==='function'){NativeBridge.downloadModel(model);return;}}catch(e){}
+  if($('modelDownloadStatus'))$('modelDownloadStatus').textContent='O download direto só funciona na versão Android do English AI.';
+});
 $('choosePresetModel')?.addEventListener('click',()=>{try{if(NB&&typeof NativeBridge.pickModel==='function'){NativeBridge.pickModel();return}}catch(e){}$('file').click()});
 $('openChatGPTWeb')?.addEventListener('click',()=>openUrl('https://chatgpt.com/'));
 $('openClaudeWeb')?.addEventListener('click',()=>openUrl('https://claude.ai/new'));
