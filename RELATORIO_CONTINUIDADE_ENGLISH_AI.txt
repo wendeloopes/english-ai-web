@@ -1,0 +1,112 @@
+RELATORIO_CONTINUIDADE_ENGLISH_AI.txt
+ATUALIZAÇÃO — RECONCILIAÇÃO DO RELATÓRIO DA CLAUDE COM O GITHUB
+Data: 2026-10-25
+Responsável: ChatGPT (GPT-6)
+Destinatários: usuário, Gemini e Claude
+
+0. RESUMO
+Recebi o relatório da Claude sobre a proposta de script apply_v1.3.5_fixes.py. O arquivo Python em si NÃO foi anexado nesta conversa; portanto, não pude auditar seu código diretamente.
+Em vez de presumir que a branch do GitHub estivesse igual ao ZIP, consultei a branch real repair/english-ai-v1.3.4-audio-history. Encontrei nela as três classes de correção descritas pela Claude: sanitização da fala, persistência com contingência/debounce e transições de ciclo de vida no NativeBridge/MainActivity.
+Isso significa que o ZIP 1.3.4 enviado anteriormente está desatualizado em relação a essa branch de reparo. Não significa que as correções tenham sido testadas no Samsung A56.
+
+1. BRANCH E ARQUIVOS CONFERIDOS NO GITHUB
+Repositório: https://github.com/wendeloopes/english-ai-web
+Branch examinada: repair/english-ai-v1.3.4-audio-history
+Arquivos consultados:
+- android-native/app/src/main/assets/www/index.html
+- android-native/app/src/main/java/com/englishai/app/NativeBridge.kt
+- android-native/app/src/main/java/com/englishai/app/MainActivity.kt
+- tools/static_check.py
+- .github/workflows/android-native.yml
+
+A branch permanece uma branch de reparo separada. Não foi feito merge e a branch de backup não foi alterada nesta etapa.
+
+2. O QUE FOI CONFIRMADO NA BRANCH DE REPARO
+A) Fala apenas em inglês:
+- Existe speechText(s).
+- Divide a resposta no separador de legendas ===.
+- Remove HTML, alguns marcadores Markdown e prefixos como English AI, English IA, Reply, Response e Assistant.
+- enqueue(s) chama speechText(s) antes de colocar o texto na fila.
+Limitação: a lógica foi inspecionada no código, mas não foi executada nesta etapa em um dispositivo real.
+
+B) Persistência:
+- A função persist() tenta salvar o histórico completo.
+- Se falhar, tenta reduzir o número de conversas e o tamanho das mensagens, priorizando a conversa atual.
+- Existe schedulePersist() com debounce de 300 ms.
+- Existe flushPersist() e chamadas nos eventos pagehide e visibilitychange.
+Observação: não existe uma função com o nome exato saveChatsSafe; a branch implementa a recuperação de quota dentro de persist(). Não exigir esse nome se a funcionalidade equivalente estiver validada.
+
+C) Ciclo de vida do modelo:
+- NativeBridge.kt contém setForeground(isForeground), unloaded, foreground e lifecycleLock.
+- unloadForBackground() enfileira o trabalho e verifica o estado de foreground antes de descarregar o motor.
+- Há tentativa de recarregar se o app voltar enquanto o descarregamento estiver acontecendo.
+- MainActivity.kt chama bridge.setForeground(true/false) nos eventos de ciclo de vida.
+Limitação: a recuperação do motor precisa de teste real; inspeção de código não prova que não existam condições de corrida.
+
+3. VERSÃO E BUILD
+- A branch de reparo ainda declara versionCode 7 e versionName 1.3.4.
+- O static_check.py ainda espera 1.3.4 / code 7.
+- O workflow android-native.yml inclui a branch de reparo e verifica o código antes de executar Gradle assembleDebug.
+- Há registro anterior de CI bem-sucedido para o commit a75e755116debd1c1e51bfb79d38b92b6561547c, run 40217563118.
+- Não foi disparado um novo build nesta etapa.
+- Não foi criada a versão 1.3.5 nesta etapa.
+Recomendação: não aplicar cegamente o script da Claude nem fazer bump para 1.3.5 antes de comparar seu conteúdo com a branch de reparo. Isso pode duplicar correções ou criar conflitos.
+
+4. O QUE NÃO FOI FEITO NESTA ETAPA
+- Nenhum arquivo de código do app foi alterado.
+- Não foi executado apply_v1.3.5_fixes.py, pois ele não foi anexado.
+- Não houve commit de código do app, novo APK ou novo build.
+- Não houve instalação ou teste no Samsung Galaxy A56.
+- Não foram testados microfone, TTS real, LiteRT-LM em execução, bateria ou perda de dados em condições reais.
+- Nenhum despertador ou wake word foi implementado.
+
+5. O QUE PRECISO DA CLAUDE
+Envie o arquivo completo apply_v1.3.5_fixes.py, se ainda quiser que ele seja revisado, e informe o hash ou versão exata da cópia v1.3.2 usada nos testes.
+Compare o script com a branch de reparo. A branch já contém correções equivalentes, então não as reaplique automaticamente.
+Se a intenção é preparar v1.3.5, liste apenas as diferenças necessárias após a comparação, incluindo alterações de versionCode/versionName e static_check.py. Não declarar build ou teste no A56 sem evidência.
+
+6. O QUE PRECISO DO GEMINI
+Compare este relatório com as mudanças que você acredita ter feito.
+Confirme qual commit/branch contém as alterações de áudio, histórico e ciclo de vida.
+Se tiver criado outro patch ou APK depois do commit a75e755..., envie o diff/arquivos e o resultado real do CI.
+Não considere o ZIP antigo como prova de que a branch do GitHub não contém as correções.
+
+7. PRÓXIMA AÇÃO RECOMENDADA
+1. Receber/revisar apply_v1.3.5_fixes.py se a Claude quiser mantê-lo como artefato.
+2. Comparar o script com a branch repair/english-ai-v1.3.4-audio-history para evitar duplicações.
+3. Se a branch já contém as correções necessárias, executar um novo build na branch de reparo e revisar o artefato resultante, sem merge automático.
+4. Instalar/testar no A56: resposta em inglês + legenda PT, sem leitura do português; salvar/fechar/abrir histórico; sair por mais de 3 minutos e voltar; verificar recarga do modelo.
+5. Somente após estabilizar a versão, começar etapa separada para despertador falante e horários. A frase de ativação fica para depois.
+
+PASSAGEM DE TRABALHO
+- ZIP local examinado anteriormente: v1.3.4, sem os reparos que aparecem na branch de reparo.
+- Branch real consultada agora: repair/english-ai-v1.3.4-audio-history.
+- Confirmado no GitHub: speechText/enqueue, persistência com fallback, schedulePersist/flushPersist, setForeground e chamadas em MainActivity.
+- Não confirmado: execução no A56, novo build nesta etapa, versão 1.3.5, despertador e wake word.
+- Código do app alterado nesta etapa: nenhum.
+- Artefato pendente: apply_v1.3.5_fixes.py da Claude não foi anexado nesta conversa.
+- Próximo passo: comparar o script com a branch de reparo; evitar reaplicação duplicada; build e teste real antes de promover a versão.
+
+
+8. ATUALIZAÇÃO CI — RUN 40217563118, TENTATIVA 2
+Consulta final: 2026-10-25T18:24:07Z
+Status final do workflow: completed
+Conclusão: SUCCESS
+Tentativa: 2
+Commit compilado: a75e755116debd1c1e51bfb79d38b92b6561547c
+Job build: SUCCESS (ID 121251963326)
+- Static checks (tools/static_check.py): SUCCESS
+- Compile debug APK: SUCCESS
+- Verify APK versionName 1.3.4 / versionCode 7: SUCCESS
+- Upload de artefatos: SUCCESS
+
+NOVO APK DA TENTATIVA 2 (não usar o artefato da tentativa 1):
+Nome: English-Ai-Native-debug-apk
+Artifact ID: 12609635158
+Criado em: 2026-10-25T18:24:03Z
+Tamanho do ZIP do artefato: 23,449,251 bytes
+Digest SHA-256 do ZIP do artefato: 280d93ce9f717112a0022642fa25327853a9e7edcd490c054b8caf9abf1de1b0
+Link do artefato: https://github.com/wendeloopes/english-ai-web/actions/runs/40217563118/artifacts/12609635158
+Link do workflow: https://github.com/wendeloopes/english-ai-web/actions/runs/40217563118
+
+Importante: o workflow foi executado sobre a SHA a75e755. O commit a824219 adiciona apenas documentação e não muda o código do app. O build verde confirma os testes automatizados e a verificação da versão no APK; NÃO equivale à homologação física no Samsung Galaxy A56. PR #3 continua sem merge. Aguardar instalação e validação manual do proprietário antes de qualquer merge.

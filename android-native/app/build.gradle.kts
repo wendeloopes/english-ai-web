@@ -13,4 +13,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.0")
     implementation("com.google.mlkit:translate:17.0.3")
+    // Fully on-device speech recognition fallback; the ~40 MB English model is downloaded by the user in-app.
+    implementation("com.alphacephei:vosk-android:0.3.47")
 }

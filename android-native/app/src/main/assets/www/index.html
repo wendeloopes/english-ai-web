@@ -49,6 +49,12 @@ svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke
 .mic{width:68px;height:68px;border-radius:50%;background:#fff;color:#000;display:grid;place-items:center;transition:transform .2s,box-shadow .3s}
 .mic svg{width:26px;height:26px}.mic.live{box-shadow:0 0 0 8px #ffffff22,0 0 40px #8fb4ff88;transform:scale(1.06)}
 .mic.stop{background:#ff4d5e;color:#fff}
+/* Voice activation: light-weight concentric waveform glow, active only while listening. */
+#voice::after{content:"";position:absolute;left:50%;top:48%;width:180px;height:180px;transform:translate(-50%,-50%);border:1px solid #8fb4ff00;border-radius:50%;pointer-events:none;opacity:0}
+#voice.voice-activated::after{opacity:1;animation:voiceRipple 1.8s ease-out infinite}
+#voice.voice-activated::before{content:"";position:absolute;left:50%;top:48%;width:140px;height:140px;transform:translate(-50%,-50%);border:1px solid #9aabff99;border-radius:50%;box-shadow:0 0 28px #8fb4ff33;pointer-events:none;animation:voiceRipple 1.8s ease-out infinite .6s}
+@keyframes voiceRipple{0%{width:110px;height:110px;opacity:.8;border-color:#9aabff99}100%{width:290px;height:290px;opacity:0;border-color:#8fb4ff00}}
+@media(prefers-reduced-motion:reduce){#voice.voice-activated::before,#voice.voice-activated::after{animation:none;opacity:.25}}
 /* chat */
 #chat{padding:0 16px 14px}
 #chat .top{padding:0 0}
@@ -190,6 +196,10 @@ progress{width:100%;height:6px;margin-top:8px;display:none}
   <div class="row"><div>Hands-free<small>Listen again right after she finishes. Use headphones.</small></div><button class="sw" id="tHands" role="switch"></button></div>
   <div class="row"><div>Delete all conversations</div><button class="btn g" id="wipe">Delete</button></div>
   <div class="row"><div>Your name<small>The AI will call you by it.</small></div><input class="txt" id="nameIn" maxlength="24" placeholder="Wendel" autocomplete="off"></div>
+  <div class="row"><div>Morning routine <small>Active conversation window</small></div><div style="display:flex;gap:5px"><input type="time" id="morningStart" value="04:30" aria-label="Morning start"><input type="time" id="morningEnd" value="07:30" aria-label="Morning end"></div></div>
+  <div class="row"><div>Evening routine <small>Active conversation window</small></div><div style="display:flex;gap:5px"><input type="time" id="eveningStart" value="18:30" aria-label="Evening start"><input type="time" id="eveningEnd" value="22:00" aria-label="Evening end"></div></div>
+  <div class="row"><div>Conversation mode <small>Continuous hands-free or individual quick replies</small></div><select class="txt" id="interactionMode"><option value="continuous">Continuous session</option><option value="individual">Individual replies</option></select></div>
+  <div class="row"><div>Save assistant routine <small id="routineStatus">Set your times and save.</small></div><button class="btn" id="saveRoutine">Save</button></div>
   <div class="row"><div>Portuguese subtitles<small>Shown under the English. Never spoken.</small></div><button class="sw" id="tPt" role="switch"></button></div>
   <div class="row"><div>Plugins<small>Claude · ChatGPT · GitHub</small></div><button class="btn g" id="openPlug">Open</button></div>
   <div class="row"><div>Error log<small id="errCount">None</small></div><button class="btn g" id="openErrs">Open</button></div>
@@ -205,10 +215,16 @@ progress{width:100%;height:6px;margin-top:8px;display:none}
 
 <script>
 const $=id=>document.getElementById(id),esc=s=>s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])),sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const ld=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch(e){return d}},sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+const ld=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch(e){return d}},sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}};
 let S=Object.assign({speak:true,caps:true,hands:false,sfx:true,pt:true,name:'',rate:1,voice:''},ld('echo.set',{}));
 let chats=ld('echo.chats',[]),curId=ld('echo.cur',null),muted=false;
-const persist=()=>{sv('echo.chats',chats);sv('echo.cur',curId)};
+let persistWarnedAt=0;
+const persist=()=>{if(sv('echo.chats',chats)){sv('echo.cur',curId);return true}const now=Date.now();if(now-persistWarnedAt>10000){persistWarnedAt=now;const msg='O armazenamento está cheio: esta alteração pode não ser salva. Exporte ou libere espaço antes de continuar.';toast(msg);logErr('storage-quota',msg)}return false};
+let persistTimer=0;
+const schedulePersist=()=>{clearTimeout(persistTimer);persistTimer=setTimeout(()=>{persistTimer=0;persist()},300)};
+const flushPersist=()=>{clearTimeout(persistTimer);persistTimer=0;persist()};
+window.addEventListener('pagehide',flushPersist);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)flushPersist()});
 const cur=()=>{let c=chats.find(x=>x.id===curId);if(!c){c={id:''+Date.now(),title:'New conversation',msgs:[]};chats.unshift(c);curId=c.id;persist()}return c};
 
 /* ================= ORB ================= */
@@ -288,7 +304,16 @@ let nativeTranslationId='', nativeTranslationBubble=null, nativeLivePt={}, nativ
 
 const voices=()=>window.speechSynthesis?.getVoices?.().filter(v=>/^en/i.test(v.lang))||[];
 function pickVoice(){const v=voices();return v.find(x=>x.name===S.voice)||v.find(x=>x.lang==='en-US'&&/google|natural|samantha|aria|jenny|neural/i.test(x.name))||v.find(x=>x.lang==='en-US')||v[0]}
-function enqueue(s){s=s.replace(/[*#_`>]/g,'').trim();if(!s)return;q.push(s);pump()}
+function speechText(s){
+  // Speech receives only the English segment, never the bilingual subtitle or UI labels.
+  s=String(s||'').split(/\n\s*={2,}\s*\n|\s+={2,}\s*/)[0];
+  s=s.replace(/<[^>]*>/g,' ').replace(/[*#_`>]/g,' ');
+  s=s.replace(/^\s*(?:(?:english\s*(?:ai|ia|reply|response)|assistant)\s*[:：-]\s*)+/i,'');
+  s=s.replace(/\s+([,.!?;:])/g,'$1');
+  s=s.replace(/\s+/g,' ').trim();
+  return s;
+}
+function enqueue(s){s=speechText(s);if(!s)return;q.push(s);pump()}
 function pump(){
   if(talking||!q.length)return;const s=q.shift();talking=true;
   const u=new SpeechSynthesisUtterance(s);u.voice=pickVoice();u.lang='en-US';u.rate=S.rate;
@@ -351,7 +376,7 @@ async function ask(text){
   try{
     await Brain.reply(hist,p=>{raw+=p;const sp=splitPt(raw);buf+=sp.en.slice(fed);fed=sp.en.length;ai.t=sp.en.trim();ai.pt=S.pt?sp.pt:'';
       if(ai.pt)nativePtFinal=true;
-      bub.firstChild.textContent=ai.t;if(ai.pt){bub.querySelector('.pt').textContent=ai.pt;$('capPt').textContent=ai.pt}
+      bub.firstChild.textContent=ai.t;if(ai.pt){bub.querySelector('.pt').textContent=ai.pt;$('capPt').textContent=ai.pt}schedulePersist();
       if(S.pt&&NB&&typeof NativeBridge.translate==='function'&&!sp.pt){const sentences=(sp.en.match(/[^.!?]+[.!?]+/g)||[]).map(s=>s.trim()).filter(Boolean);while(nativeLiveCount<sentences.length){const idx=nativeLiveCount++;NativeBridge.translate('live:'+my+':'+idx,sentences[idx]);}}
       $('msgs').scrollTop=1e9;
       if(!speak){state!=='speaking'&&setState('speaking');cap(esc(ai.t.slice(-170)))}flush(false)},alive);
@@ -380,7 +405,7 @@ async function listen(){
   rec.onend=()=>{rec=null;if(state!=='listening')return;heard.trim()?ask(heard):setState('idle')};
   try{rec.start()}catch(e){setState('idle')}
 }
-function sendVoice(){if(rec)try{rec.stop()}catch(e){}}
+function sendVoice(){if(nativeListening&&NB&&typeof NativeBridge.stopListening==='function'){cap('<span class="you">Finishing your sentence…</span>');NativeBridge.stopListening();return}if(rec)try{rec.stop()}catch(e){}}
 const micAction=()=>{if(state==='listening')sendVoice();else if(state==='idle')listen();else stopAll()};
 $('mic').onclick=$('orb').onclick=micAction;
 $('cStop').onclick=stopAll;
@@ -470,7 +495,7 @@ if (window.NativeBridge) {
   window.Native.onSpeechReady = () => { if(state==='listening') cap('<span class="you">Listening now — speak in English…</span>'); };
   window.Native.onSpeechStarted = () => { extLevel=Math.max(extLevel,.5); if(state==='listening'&&!heard) cap('<span class="you">I hear you — keep speaking…</span>'); };
   window.Native.onSpeechPartial = text => { extLevel=Math.max(extLevel,.6); heard=text||''; cap('<span class="you">'+esc(heard)+'</span>'); };
-  window.Native.onSpeechEnd = text => { nativeListening=false; rec=null; if(state==='listening' && (text||heard).trim()) ask((text||heard).trim()); else if(state==='listening')setState('idle'); };
+  window.Native.onSpeechEnd = text => { nativeListening=false; rec=null; const finalText=(text||'').trim()||(heard||'').trim(); if(state==='listening'&&finalText) ask(finalText); else if(state==='listening'){cap('I couldn’t recognize that phrase. Try speaking a little closer to the microphone, then pause or tap the microphone to finish.');setState('idle');} };
   window.Native.onSpeechError = msg => { nativeListening=false; rec=null; if(state==='listening'){cap(esc(msg||'Speech recognition is unavailable. Type in chat.'));setState('idle');} };
   window.Native.onLevel = value => { nativeMicLevel=Math.max(0,Math.min(1,Number(value)||0)); extLevel=Math.max(extLevel,Math.min(1,nativeMicLevel*1.7)); };
   window.Native.onVoices = json => { try { const a=JSON.parse(json||'[]'),s=$('voiceSel'); s.innerHTML='<option value="">System default (US)</option>'+a.map(v=>'<option value="'+esc(v.name)+'">'+esc(v.name)+' ('+esc(v.lang)+')</option>').join(''); s.value=S.voice||''; } catch(e){} };
@@ -486,6 +511,18 @@ if (window.NativeBridge) {
   pump = function(){ if(talking||!q.length)return; const s=q.shift(); talking=true; nativeSpeakingText=s; nativeSpeakingId=String(Date.now())+String(Math.random()); setState('speaking'); showCap(s,-1); NativeBridge.speak(nativeSpeakingId,s,String(S.rate),String(S.voice||'')); };
   stopAll = function(){ nativeTranslationId=''; nativeTranslationBubble=null; gen++; q=[]; talking=false; busy=false; NativeBridge.cancelGenerate(); NativeBridge.stopSpeaking(); if(nativeListening)NativeBridge.cancelListening(); nativeListening=false; rec=null; persist(); setState('idle'); };
   listen = async function(){ if(state==='listening')return; stopAll(); heard=''; nativeListening=true; setState('listening'); cap('<span class="you">Say something in English…</span>'); NativeBridge.startListening(); };
+  window.Native.onHotwordActivated = () => {
+    if(state==='listening') return;
+    // Quiet, short confirmation tone plus visual listening ripple while the app is visible.
+    try {
+      const Ctx=window.AudioContext||window.webkitAudioContext;
+      if(Ctx){const ctx=new Ctx(),osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sine';osc.frequency.value=660;gain.gain.setValueAtTime(0.0001,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(0.055,ctx.currentTime+0.015);gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.16);osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+0.17);osc.onended=()=>ctx.close();}
+    } catch(e) {}
+    $('voice').classList.add('voice-activated');
+    if(state==='thinking'||state==='speaking') stopAll();
+    go('voice');
+    setTimeout(()=>{ if(state==='idle') listen(); }, 500);
+  };
   sendVoice = function(){ if(nativeListening)NativeBridge.stopListening(); };
   const choose=$('file').parentElement.querySelector('label[for="file"]'); if(choose)choose.onclick=e=>{e.preventDefault();NativeBridge.pickModel();};
   $('file').onchange=()=>{};
@@ -541,7 +578,91 @@ $('ghConn').onclick=async()=>{const repo=$('ghRepo').value.trim(),token=$('ghTok
     const r=await fetch('https://api.github.com/repos/'+repo,{headers:h});if(!r.ok)throw new Error('Repository not found or no access ('+r.status+')');
     sv('echo.gh',{token,repo,user:(await u.json()).login});$('ghTok').value='';ghUI();toast('GitHub connected')}catch(e){toast(e.message||'Could not connect')}};
 $('ghOff').onclick=()=>{try{localStorage.removeItem('echo.gh')}catch(e){}ghUI();toast('GitHub disconnected')};
-/* settings: name + Portuguese subtitles */
+/* settings: name + Portuguese subtitles + routines */
+const routineDefaults={morningStart:'04:30',morningEnd:'07:30',eveningStart:'18:30',eveningEnd:'22:00',interactionMode:'continuous'};
+let routines=Object.assign({},routineDefaults,ld('echo.routines',{}));
+for(const k of ['morningStart','morningEnd','eveningStart','eveningEnd','interactionMode'])$(k).value=routines[k];
+function saveRoutineSettings(){
+  for(const k of ['morningStart','morningEnd','eveningStart','eveningEnd','interactionMode'])routines[k]=$(k).value;
+  S.hands=routines.interactionMode==='continuous';sv('echo.set',S);
+  sv('echo.routines',routines);
+  const data=JSON.stringify({userName:(S.name||'').trim(),routines,interactionMode:routines.interactionMode});
+  if(NB&&typeof NativeBridge.saveUserSettings==='function'){
+    NativeBridge.saveUserSettings(data);
+    $('routineStatus').textContent='Routine saved on this phone.';
+  }else $('routineStatus').textContent='Saved in this app. Native schedule sync is available in the Android build.';
+}
+
+$('saveRoutine').onclick=saveRoutineSettings;
+/* Real Android alarm + explicit opt-in hotword service. */
+(function installVoiceAssistantControls(){
+  const box=document.createElement('section');
+  box.id='voiceAssistantControls';
+  box.style.cssText='margin:14px 0;padding:14px;border:1px solid var(--line,#333);border-radius:16px;background:var(--panel,#17191f);display:grid;gap:12px';
+  box.innerHTML='<div style="font-weight:700">Voice assistant</div>'+
+    '<div style="padding:10px;border:1px solid var(--line,#333);border-radius:12px;display:grid;gap:8px">'+
+      '<b>Offline English speech recognition</b>'+
+      '<small>Install a separate on-device speech engine (~40 MB, one-time download). After installation, voice practice works offline and does not depend on Android/Google Speech Recognition.</small>'+
+      '<div id="offlineSpeechStatus" style="font-size:12px;opacity:.85">Checking offline speech engine…</div>'+
+      '<button class="btn" id="offlineSpeechDownload" type="button">Download offline speech engine</button>'+
+    '</div>'+
+    '<label style="display:flex;align-items:center;gap:10px"><input id="morningAlarmToggle" type="checkbox" style="width:20px;height:20px"> <span><b>Daily alarm · 04:40</b><br><small>Speak a morning greeting and show a notification.</small></span></label>'+
+    '<div id="morningAlarmStatus" style="font-size:12px;opacity:.8">Alarm is off.</div>'+
+    '<div style="height:1px;background:var(--line,#333)"></div>'+
+    '<label style="display:flex;align-items:center;gap:10px"><input id="hotwordToggle" type="checkbox" style="width:20px;height:20px"> <span><b>“Hi, English AI!” activation</b><br><small>Uses the microphone while a permanent Android notification is visible.</small></span></label>'+
+    '<div id="hotwordStatus" style="font-size:12px;opacity:.8">Voice activation is off.</div>'+
+    '<small style="opacity:.72">Hotword detection depends on Android speech recognition and battery settings. It is not covert listening; turn it off here or from the notification.</small>';
+  $('saveRoutine').insertAdjacentElement('afterend',box);
+  const alarm=$('morningAlarmToggle'),hotword=$('hotwordToggle');
+  const offlineBtn=$('offlineSpeechDownload'),offlineStatus=$('offlineSpeechStatus');
+  if(NB){
+    try{alarm.checked=!!NativeBridge.isMorningAlarmEnabled()}catch(e){}
+    try{hotword.checked=!!NativeBridge.isHotwordEnabled()}catch(e){}
+    try{
+      if(NativeBridge.isOfflineSpeechModelInstalled()){
+        offlineStatus.textContent='Offline English speech engine is installed and ready.';
+        offlineBtn.textContent='Downloaded ✓';offlineBtn.disabled=true;
+      }else offlineStatus.textContent='Not installed. Download once while connected to the internet.';
+    }catch(e){offlineStatus.textContent='Available in the native Android app.'}
+  }else{offlineStatus.textContent='This feature requires the native Android app.';offlineBtn.disabled=true}
+  offlineBtn.addEventListener('click',()=>{
+    if(!NB||typeof NativeBridge.downloadOfflineSpeechModel!=='function'){offlineStatus.textContent='This feature requires the native Android app.';return}
+    offlineBtn.disabled=true;offlineStatus.textContent='Starting download…';
+    NativeBridge.downloadOfflineSpeechModel();
+  });
+  window.Native.onOfflineSpeechModelStatus=(ok,message)=>{
+    offlineStatus.textContent=message||'Offline speech status updated.';
+    if(/installed and ready|already installed/i.test(offlineStatus.textContent)){
+      offlineBtn.textContent='Downloaded ✓';offlineBtn.disabled=true;
+    }else if(/Downloading offline English speech model|Starting download/i.test(offlineStatus.textContent)){
+      offlineBtn.disabled=true;offlineBtn.textContent='Downloading…';
+    }else{offlineBtn.disabled=false;offlineBtn.textContent='Retry download';}
+  };
+  alarm.addEventListener('change',()=>{
+    if(!NB||typeof NativeBridge.setMorningAlarm!=='function'){alarm.checked=false;$('morningAlarmStatus').textContent='This control requires the native Android build.';return}
+    NativeBridge.setMorningAlarm(alarm.checked);
+  });
+  hotword.addEventListener('change',()=>{
+    if(!NB||typeof NativeBridge.setHotwordEnabled!=='function'){hotword.checked=false;$('hotwordStatus').textContent='This control requires the native Android build.';return}
+    NativeBridge.setHotwordEnabled(hotword.checked);
+  });
+  window.Native.onMorningAlarmStatus=(enabled,message)=>{$('morningAlarmStatus').textContent=message|| (enabled?'Alarm enabled.':'Alarm disabled.');alarm.checked=!!enabled};
+  window.Native.onHotwordStatus=(enabled,message)=>{$('hotwordStatus').textContent=message|| (enabled?'Voice activation is on.':'Voice activation is off.');hotword.checked=!!enabled};
+})();
+
+$('nameIn').value=S.name||'';$('nameIn').oninput=e=>{S.name=e.target.value.trim().slice(0,24);sv('echo.set',S);if(NB&&typeof NativeBridge.saveUserSettings==='function')saveRoutineSettings()};
+/* Sync native preferences after the WebView has initialized. Greet at most once per active window per day. */
+if(NB&&typeof NativeBridge.saveUserSettings==='function'){
+  saveRoutineSettings();
+  try{
+    if(NativeBridge.isWithinActiveRoutine()){
+      const now=new Date(), dateKey=now.getFullYear()+'-'+(now.getMonth()+1)+'-'+now.getDate();
+      const windowKey=now.getHours()<12?'morning':'evening', greetingKey='echo.greeted.'+dateKey+'.'+windowKey;
+      if(!ld(greetingKey,false)){NativeBridge.triggerGreeting();sv(greetingKey,true)}
+    }
+  }catch(e){}
+}
+
 $('nameIn').value=S.name||'';$('nameIn').oninput=e=>{S.name=e.target.value.trim().slice(0,24);sv('echo.set',S)};
 tg('tPt','pt');$('tPt').addEventListener('click',()=>{if(!S.pt){$('capPt').textContent='';return;} if(NB&&typeof NativeBridge.ptEnsure==='function'){ $('mstat').textContent='Preparing Portuguese subtitles…'; NativeBridge.ptEnsure(); restorePortugueseCaption(); }});
 function restorePortugueseCaption(){if(!S.pt)return;const c=cur(),last=[...c.msgs].reverse().find(m=>m.r==='ai'&&m.pt);if(last){$('capPt').textContent=last.pt;const bs=$('msgs').querySelectorAll('.b.ai');const b=bs[bs.length-1];if(b){const slot=b.querySelector('.pt');if(slot)slot.textContent=last.pt;}}}

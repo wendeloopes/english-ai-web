@@ -18,6 +18,12 @@ chk('disk space check before copy','StatFs' in nb)
 chk('copy size verified','The copy was interrupted' in nb)
 chk('engine: maxNumTokens + cache + reuse','maxNumTokens' in en and 'litert-cache' in en and 'convoSystem' in en)
 chk('engine lifecycle: assign only after initialize; do not close failed candidate', 'candidate.initialize()\n        engine = candidate' in en and 'candidate.close()' not in en)
+chk('cancellation flag is visible across UI and model worker threads','@Volatile private var cancelled = false' in en and 'fun cancel() { cancelled = true;' in en and 'conversation?.cancelProcess()' in en and 'fun cancelGenerate() { cancelled = true; engine.cancel() }' in nb)
+chk('background unload is guarded by foreground lifecycle state','private val lifecycleLock = Any()' in nb and 'if (!foreground && modelFile.exists()' in nb and 'fun setForeground(isForeground: Boolean)' in nb)
+chk('model generation is serialized on the same worker as lifecycle operations','@JavascriptInterface fun generate(json: String) { cancelled = false; worker.execute { try {' in nb and 'fun unloadForBackground() { worker.execute {' in nb and 'fun removeModel() { worker.execute {' in nb)
+chk('model resume is queued off the Android main thread','foreground = isForeground' in nb and 'if (isForeground) worker.execute' in nb)
+chk('resume during engine shutdown schedules a second recovery check','// The user may have returned while engine.close() was running.' in nb and 'if (foreground) {' in nb and nb.index('if (foreground) {') > nb.index('fun unloadForBackground()'))
+chk('activity updates bridge foreground state on start/stop','bridge.setForeground(false)' in ma and 'bridge.setForeground(true)' in ma and 'bridge.reloadIfUnloaded()' not in ma)
 chk('bridge: getInfo/getLastCrash/copyText/openUrl',all(x in nb for x in ['fun getInfo','fun getLastCrash','fun copyText','fun openUrl']))
 chk('bridge: on-device Portuguese translation',all(x in nb for x in ['fun ptEnsure','fun translate']))
 for f,t in (('NativeBridge.kt',nb),('LiteRtEngine.kt',en),('MainActivity.kt',ma)):
@@ -34,6 +40,31 @@ refs=set(re.findall(r'(?:src|href)="([^"#:]+\.(?:png|svg|jpg))"',h)); miss=[r fo
 chk('local resources referenced by index.html exist (assets or repo root, copied by workflow)',not miss,str(miss))
 chk('orb loop protected (try/catch + global extLevel)','extLevel' in h and '}catch(e){}})(0);' in h)
 chk('Portuguese format + not-spoken split present',"function splitPt(raw)" in h and "raw.indexOf('===')" in h and 'NativeBridge.translate' in h)
+
+# Speech queue regression checks: exercise the real helper from index.html in Node.
+speech_match=re.search(r'function speechText\(s\)\s*\{[\s\S]*?\n\}',h)
+chk('speech queue strips Portuguese segment and UI labels',bool(speech_match))
+chk('streaming chat is autosaved with debounce and flushed on app hide', 'const schedulePersist=()=>{clearTimeout(persistTimer);persistTimer=setTimeout(()=>{persistTimer=0;persist()},300)};' in h and 'window.addEventListener(\'pagehide\',flushPersist)' in h and "if(document.hidden)flushPersist()" in h and 'schedulePersist();' in h)
+chk('chat history is saved before generation and on completion or error', "c.msgs.push({r:'me',t:text})" in h and "c.msgs.push(ai);persist();" in h and 'catch(err){busy=false;if(alive())setState(\'idle\');logErr(\'model\',(err&&err.message)||err);persist();return}' in h and 'persist();if(!alive())return;' in h)
+chk('quota failure warns user without silently truncating conversation history', 'persistWarnedAt' in h and "logErr('storage-quota',msg)" in h and 'slice(-60)' not in h and "t:String(m.t||'').slice(0,2000)" not in h)
+if speech_match:
+    test_js = speech_match.group(0) + r"""
+const assert = require('assert');
+assert.strictEqual(speechText('Hello there. === Olá, tudo bem?'), 'Hello there.');
+assert.strictEqual(speechText('English AI: How are you?'), 'How are you?');
+assert.strictEqual(speechText('Assistant: I am fine.'), 'I am fine.');
+assert.strictEqual(speechText('<b>Hello</b> *there*!'), 'Hello there!');
+assert.strictEqual(speechText('   '), '');
+assert.strictEqual(speechText('**Hello there!**'), 'Hello there!');
+assert.strictEqual(speechText('English IA: Good morning!'), 'Good morning!');
+assert.strictEqual(speechText('English response: Welcome back.'), 'Welcome back.');
+assert.strictEqual(speechText('Hello there.\n===\nOlá!'), 'Hello there.');
+assert.strictEqual(speechText('English AI:   How are you   ?'), 'How are you?');
+"""
+    open('/tmp/_speech_regression.js','w').write(test_js)
+    speech_run=subprocess.run(['node','/tmp/_speech_regression.js'],capture_output=True,text=True)
+    chk('speech queue regression tests (Node)',speech_run.returncode==0,speech_run.stderr.strip())
+
 chk('Portuguese fallback remains active in native mode',"ai.pt=S.pt?sp.pt:''" in h and 'Portuguese subtitles fallback' in h and 'Preparing Portuguese subtitles' in h)
 chk('Portuguese captions translate progressively while the answer streams',"NativeBridge.translate('live:'+my+':'+idx,sentences[idx])" in h and 'nativeLiveCount' in h)
 chk('Portuguese captions restore when app resumes', 'resumePortugueseSupport' in h and "document.addEventListener('visibilitychange'" in h and "window.addEventListener('pageshow'" in h)
@@ -48,4 +79,29 @@ workflow=rd(os.path.join(R,'.github/workflows/android-native.yml'))
 chk('workflow runs static checks before Gradle compile',workflow.find('python3 tools/static_check.py') >= 0 and workflow.find('python3 tools/static_check.py') < workflow.find('gradle assembleDebug'))
 chk('workflow verifies APK versionCode 7/versionName 1.3.4',"versionCode='7' versionName='1.3.4'" in workflow)
 chk('startup recovers backup after interrupted model import','backupModelFile.renameTo(modelFile)' in nb and 'previous model was restored after an interrupted update' in nb)
+# Native assistant routine and speech checks.
+try:
+    tts=rd(K+'EnglishTtsManager.kt')
+    us=rd(K+'UserSettings.kt')
+    chk('native TTS sanitizes markup and bilingual Portuguese segment', all(x in tts for x in ['sanitizeText','substringBefore("===")','<script','<style']))
+    chk('personalized greeting supports morning and evening', 'fun greeting(userName: String, morning: Boolean = true)' in tts and 'Hi, $safeName!' in tts and 'Good evening' in tts)
+    chk('native settings persist name, routine windows, and interaction mode', all(x in us for x in ['userName','morningStart','morningEnd','eveningStart','eveningEnd','interactionMode']))
+    chk('bridge exposes requested routine and greeting JavaScript APIs', all(x in nb for x in ['fun getUserName()','fun isWithinActiveRoutine()','fun triggerGreeting()','fun saveUserSettings(json: String)']))
+    chk('settings UI includes morning/evening windows and two interaction modes', all(x in h for x in ['id="morningStart"','id="morningEnd"','id="eveningStart"','id="eveningEnd"','value="continuous"','value="individual"','id="saveRoutine"']))
+except Exception as e:
+    chk('native assistant routines checks',False,str(e))
+# Scheduled alarm + explicit foreground hotword regression checks.
+try:
+    bg=rd(K+'AssistantBackgroundServices.kt')
+    t=re.sub(r'//.*','',re.sub(r'"(?:\\.|[^"\\])*"','""',bg))
+    chk('background assistant services have balanced Kotlin delimiters', t.count('{')==t.count('}') and t.count('(')==t.count(')'))
+    chk('04:40 alarm schedules daily and restores after reboot', all(x in bg for x in ['class MorningAlarmReceiver','scheduleNext(context, 4, 40)','class AssistantBootReceiver','morningAlarmEnabled']))
+    chk('alarm service speaks a personalized English greeting', all(x in bg for x in ['class AlarmGreetingService','Locale.US','Good morning, $name','english-ai-morning-alarm']))
+    chk('hotword uses visible microphone foreground service and explicit stop action', all(x in bg for x in ['class HotwordListeningService','startForeground(HOTWORD_NOTIFICATION','ACTION_STOP','hi english ai','createOnDeviceSpeechRecognizer']))
+    chk('manifest declares required foreground-service permissions and components', all(x in mf for x in ['FOREGROUND_SERVICE_MICROPHONE','FOREGROUND_SERVICE_MEDIA_PLAYBACK','MorningAlarmReceiver','AlarmGreetingService','HotwordListeningService','AssistantBootReceiver']))
+    chk('bridge exposes alarm and hotword controls', all(x in nb for x in ['fun setMorningAlarm(enabled: Boolean)','fun isMorningAlarmEnabled()','fun setHotwordEnabled(enabled: Boolean)','fun isHotwordEnabled()']))
+    chk('UI exposes alarm time and opt-in hotword toggle', all(x in h for x in ['morningAlarmToggle','Daily alarm · 04:40','hotwordToggle','Hi, English AI!” activation','onMorningAlarmStatus','onHotwordStatus']))
+except Exception as e:
+    chk('alarm/hotword regression checks',False,str(e))
+
 print('\nRESULT:','ALL PASSED' if ok else 'FAILURES'); sys.exit(0 if ok else 1)

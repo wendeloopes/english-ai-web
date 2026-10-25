@@ -29,12 +29,25 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private val engine = LiteRtEngine(activity)
+    private val userSettings = UserSettings(activity)
     private var tts: TextToSpeech? = null
     private var recognizer: SpeechRecognizer? = null
+    private val offlineSpeech = VoskOfflineSpeech(
+        activity,
+        { ok, message -> call("onOfflineSpeechModelStatus", ok.toString(), JSONObject.quote(message)) },
+        { call("onSpeechReady") },
+        { call("onSpeechStarted") },
+        { text -> call("onSpeechPartial", JSONObject.quote(text)) },
+        { text -> call("onSpeechEnd", JSONObject.quote(text)) },
+        { message -> call("onSpeechError", JSONObject.quote(message)) }
+    )
     @Volatile private var ptTranslator: Translator? = null
     private val ptLock = Any()
     @Volatile private var cancelled = false
     @Volatile private var listening = false
+    @Volatile private var listeningStartupPending = false
+    // Retry one transient service disconnect without switching away from the offline provider.
+    @Volatile private var speechDisconnectRetries = 0
     @Volatile private var modelLoadFailure: String? = null
     private val modelFile get() = File(activity.filesDir, "model.litertlm")
     private val backupModelFile get() = File(activity.filesDir, "model.bak")
@@ -142,15 +155,138 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         val am = activity.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
         val mi = android.app.ActivityManager.MemoryInfo(); am.getMemoryInfo(mi); return mi.totalMem
     }
+    /** Native mirror of settings edited by the WebView. */
+    @JavascriptInterface fun saveUserSettings(json: String) {
+        try { userSettings.save(json) } catch (_: Exception) {}
+    }
+    @JavascriptInterface fun getUserName(): String = userSettings.userName()
+    @JavascriptInterface fun isWithinActiveRoutine(): Boolean = userSettings.isWithinActiveRoutine()
+    /** Speak the personalized greeting only inside a configured morning/evening window. */
+    @JavascriptInterface fun triggerGreeting() {
+        if (!userSettings.isWithinActiveRoutine()) return
+        val hour = java.time.LocalTime.now().hour
+        val greeting = EnglishTtsManager.greeting(userSettings.userName(), hour < 12)
+        main.post {
+            try {
+                tts?.setLanguage(Locale.US)
+                tts?.speak(greeting, TextToSpeech.QUEUE_FLUSH, null, "english-ai-greeting")
+            } catch (_: Exception) {}
+        }
+    }
+
+
+    /** Schedule/cancel the real Android alarm at 04:40. */
+    @JavascriptInterface fun setMorningAlarm(enabled: Boolean) {
+        val prefs = activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("morningAlarmEnabled", enabled).apply()
+        if (enabled) {
+            MorningAlarmReceiver.scheduleNext(activity, 4, 40)
+            val alarmManager = activity.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
+            if (Build.VERSION.SDK_INT >= 31 && !alarmManager.canScheduleExactAlarms()) {
+                call("onMorningAlarmStatus", "true", JSONObject.quote("Alarm saved. Allow exact alarms in the Android screen that opens so it can ring at 04:40 rather than approximately."))
+                main.post {
+                    try {
+                        val settingsIntent = Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+                        settingsIntent.data = Uri.parse("package:" + activity.packageName)
+                        activity.startActivity(settingsIntent)
+                    } catch (_: Exception) {}
+                }
+            } else {
+                call("onMorningAlarmStatus", "true", JSONObject.quote("Daily 04:40 exact alarm scheduled."))
+            }
+        } else {
+            MorningAlarmReceiver.cancel(activity)
+            call("onMorningAlarmStatus", "false", JSONObject.quote("Morning alarm disabled."))
+        }
+    }
+    fun refreshScheduledAlarm() {
+        if (isMorningAlarmEnabled()) {
+            MorningAlarmReceiver.scheduleNext(activity, 4, 40)
+            val alarmManager = activity.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
+            if (Build.VERSION.SDK_INT < 31 || alarmManager.canScheduleExactAlarms()) {
+                call("onMorningAlarmStatus", "true", JSONObject.quote("Daily 04:40 exact alarm scheduled."))
+            }
+        }
+    }
+
+    @JavascriptInterface fun isMorningAlarmEnabled(): Boolean =
+        activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE).getBoolean("morningAlarmEnabled", false)
+
+    @JavascriptInterface fun isHotwordEnabled(): Boolean =
+        activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE).getBoolean("hotwordEnabled", false)
+
+    /** Start hotword only from the visible app after the user explicitly enables it. */
+    @JavascriptInterface fun setHotwordEnabled(enabled: Boolean) {
+        val prefs = activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
+        if (!enabled) {
+            prefs.edit().putBoolean("hotwordEnabled", false).apply()
+            activity.stopService(Intent(activity, HotwordListeningService::class.java))
+            call("onHotwordStatus", "false", JSONObject.quote("Voice activation stopped."))
+            return
+        }
+        if (activity.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            call("onHotwordStatus", "false", JSONObject.quote("Microphone permission is required. Grant it in Android app settings, then enable voice activation again."))
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            call("onHotwordStatus", "false", JSONObject.quote("Notifications must be enabled so Android can show the persistent microphone indicator. Allow notifications, then enable voice activation again."))
+            main.post {
+                try {
+                    val settingsIntent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    settingsIntent.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, activity.packageName)
+                    activity.startActivity(settingsIntent)
+                } catch (_: Exception) {}
+            }
+            return
+        }
+        try {
+            prefs.edit().putBoolean("hotwordEnabled", true).apply()
+            val intent = Intent(activity, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_START)
+            if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(intent) else activity.startService(intent)
+            call("onHotwordStatus", "true", JSONObject.quote("Voice activation is on. A persistent notification will remain visible while the microphone is active."))
+        } catch (e: Exception) {
+            prefs.edit().putBoolean("hotwordEnabled", false).apply()
+            call("onHotwordStatus", "false", JSONObject.quote(e.message ?: "Could not start voice activation. Keep English AI open and try again."))
+        }
+    }
+
     /** Shown in Settings so you can confirm which build is installed. */
     @JavascriptInterface fun getInfo(): String {
         val v = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName } catch (_: Exception) { "?" }
         return "v$v · RAM " + String.format(Locale.US, "%.1f", totalRam() / 1073741824.0) + " GB"
     }
     @Volatile private var unloaded = false
-    /** Called by the activity after the app stayed in the background for a while: frees the model's RAM. */
-    fun unloadForBackground() { worker.execute { if (modelFile.exists() && modelLoadFailure == null) { engine.close(); unloaded = true; modelLoadFailure = "The model is reloading. Wait for Model ready." } } }
-    fun reloadIfUnloaded() { if (unloaded) { unloaded = false; loadPath() } }
+    @Volatile private var foreground = true
+    private val lifecycleLock = Any()
+    /** Keep lifecycle transitions ordered with the delayed background-unload task. */
+    fun setForeground(isForeground: Boolean) {
+        // Never make Android's main thread wait for engine.close() during app resume.
+        foreground = isForeground
+        if (isForeground) worker.execute {
+            val shouldReload = synchronized(lifecycleLock) {
+                if (unloaded) { unloaded = false; true } else false
+            }
+            if (shouldReload) loadPath()
+        }
+    }
+    /** Called after the app stayed in the background: free RAM only if it is still backgrounded. */
+    fun unloadForBackground() { worker.execute {
+        synchronized(lifecycleLock) {
+            if (!foreground && modelFile.exists() && modelLoadFailure == null) {
+                engine.close()
+                unloaded = true
+                modelLoadFailure = "The model is reloading. Wait for Model ready."
+            }
+        }
+        // The user may have returned while engine.close() was running. Recover on the worker.
+        if (foreground) {
+            val shouldReload = synchronized(lifecycleLock) {
+                if (unloaded) { unloaded = false; true } else false
+            }
+            if (shouldReload) loadPath()
+        }
+    } }
+    fun reloadIfUnloaded() = setForeground(true)
     fun trimMemory() { worker.execute { engine.trimConversation() } }
     @JavascriptInterface fun copyText(text: String) { main.post { try { val cm = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager; cm.setPrimaryClip(android.content.ClipData.newPlainText("English Ai", text)) } catch (_: Exception) {} } }
     @JavascriptInterface fun openUrl(url: String) { main.post { try { if (url.startsWith("https://")) activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {} } }
@@ -283,29 +419,54 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
 
     @JavascriptInterface fun getVoices() { refreshVoices() }
     fun refreshVoices() { val arr = JSONArray(); tts?.voices?.filter { it.locale.language == "en" }?.forEach { v -> arr.put(JSONObject().put("name", v.name).put("lang", v.locale.toLanguageTag())) }; call("onVoices", JSONObject.quote(arr.toString())) }
-    @JavascriptInterface fun speak(id: String, text: String, rate: String, voiceName: String) { main.post { try { tts?.setSpeechRate(rate.toFloatOrNull() ?: 1f); tts?.voices?.firstOrNull { it.name == voiceName }?.let { tts?.voice = it }; tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) } catch (_: Exception) { call("onTtsDone", JSONObject.quote(id)) } } }
+    @JavascriptInterface fun speak(id: String, text: String, rate: String, voiceName: String) { main.post { try { val clean = EnglishTtsManager.sanitizeText(text); if (clean.isBlank()) { call("onTtsDone", JSONObject.quote(id)); return@post }; tts?.language = Locale.US; tts?.setSpeechRate(rate.toFloatOrNull() ?: 1f); tts?.voices?.firstOrNull { it.name == voiceName && it.locale.language == "en" }?.let { tts?.voice = it }; tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, id) } catch (_: Exception) { call("onTtsDone", JSONObject.quote(id)) } } }
     @JavascriptInterface fun stopSpeaking() { main.post { tts?.stop() } }
+    @JavascriptInterface fun downloadOfflineSpeechModel() { offlineSpeech.downloadModel() }
+    @JavascriptInterface fun isOfflineSpeechModelInstalled(): Boolean = offlineSpeech.isInstalled()
     @JavascriptInterface fun startListening() { main.post { requestMic() } }
     fun startListeningGranted() {
         main.post {
-            if (listening) return@post
+            // A hotword recognizer must release the microphone before push-to-talk starts.
+            if (activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
+                    .getBoolean("hotwordEnabled", false)) {
+                try { activity.startService(Intent(activity, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_PAUSE)) } catch (_: Exception) {}
+            }
+            if (listening || listeningStartupPending) return@post
+            speechDisconnectRetries = 0
+            // Prefer the separately installed Vosk engine. It does not use Android's broken
+            // Speech Recognition service and never sends audio off-device.
+            if (offlineSpeech.isInstalled()) {
+                try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) {}
+                recognizer = null
+                try { tts?.stop() } catch (_: Exception) {}
+                listeningStartupPending = false
+                offlineSpeech.start()
+                return@post
+            }
             if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
                 call("onSpeechError", JSONObject.quote("No speech recognition service is available. Check Android's Speech Recognition settings."))
                 return@post
             }
-            // Prefer truly on-device recognition, but recover from ERROR_SERVER_DISCONNECTED (11)
-            // by retrying once with Android's default recognition service.
-            if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)) {
-                beginListening(useOnDevice = true)
-            } else {
-                beginListening(useOnDevice = false)
-            }
+            // Stop English speech playback before opening the microphone, then allow audio routing to settle.
+            try { tts?.stop() } catch (_: Exception) {}
+            listeningStartupPending = true
+            main.postDelayed({
+                if (listening) { listeningStartupPending = false; return@postDelayed }
+                if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)) {
+                    beginListening(useOnDevice = true)
+                } else {
+                    beginListening(useOnDevice = false)
+                }
+            }, 180)
         }
     }
 
     private fun beginListening(useOnDevice: Boolean) {
+        if (listening) { listeningStartupPending = false; return }
         try {
+            try { recognizer?.cancel() } catch (_: Exception) {}
             try { recognizer?.destroy() } catch (_: Exception) {}
+            listeningStartupPending = false
             listening = true
             recognizer = if (useOnDevice && Build.VERSION.SDK_INT >= 31) {
                 SpeechRecognizer.createOnDeviceSpeechRecognizer(activity)
@@ -317,18 +478,25 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
                 override fun onBeginningOfSpeech() { call("onSpeechStarted") }
                 override fun onRmsChanged(rmsdB: Float) { call("onLevel", (rmsdB / 12f).coerceIn(0f, 1f).toString()) }
                 override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() { listening = false }
+                // Android normally delivers onResults/onError after onEndOfSpeech. Keep the lock
+                // until that terminal callback so a second recognizer cannot overlap the first.
+                override fun onEndOfSpeech() {}
                 override fun onError(error: Int) {
+                    // Android speech services can disconnect transiently during startup.
+                    // Recreate the SAME recognizer once; never switch to a cloud-capable provider.
+                    if (error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED &&
+                        speechDisconnectRetries < 1 && !cancelled) {
+                        speechDisconnectRetries++
+                        listening = false
+                        listeningStartupPending = true
+                        main.postDelayed({
+                            if (listeningStartupPending && !listening) beginListening(useOnDevice)
+                        }, 350)
+                        return
+                    }
                     listening = false
-                    if ((error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED ||
-                         error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE ||
-                         error == SpeechRecognizer.ERROR_NO_MATCH) && useOnDevice) {
-                        // On some phones, on-device recognition is advertised but the language pack is
-                        // missing, the service disconnects, or it fails to match speech. Retry
-                        // once with Android's default service. The useOnDevice flag prevents loops.
-                        main.postDelayed({ if (!listening) beginListening(useOnDevice = false) }, 250)
-                    } else {
-                        val detail = when (error) {
+                    listeningStartupPending = false
+                    val detail = when (error) {
                             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Android denied microphone access."
                             SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "English speech recognition is unavailable on this phone. Install/update the Google app and Speech Recognition service, then download English (United States) speech/language data in their settings. You can still type your answer."
                             SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> "Android's speech recognition service disconnected. Check or update the Speech Recognition service in system settings. You can still type your answer."
@@ -336,13 +504,13 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
                             SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "I didn't hear speech. Tap the microphone and start speaking when the listening screen appears. You can also type your answer."
                             SpeechRecognizer.ERROR_AUDIO -> "The microphone audio could not be captured. Check microphone permission and make sure another app isn't using the microphone. You can also type your answer."
                             SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Speech recognition is busy. Wait a moment and try the microphone again, or type your answer."
-                            else -> "Speech recognition couldn't complete (code $error). Check microphone permission and the English (United States) speech service, then try again or type your answer."
-                        }
-                        call("onSpeechError", JSONObject.quote(detail))
+                        else -> "Speech recognition couldn't complete (code $error). Check microphone permission and the English (United States) offline speech data, then try again or type your answer."
                     }
+                    call("onSpeechError", JSONObject.quote(detail))
                 }
                 override fun onResults(results: android.os.Bundle?) {
                     listening = false
+                    listeningStartupPending = false
                     val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                     call("onSpeechEnd", JSONObject.quote(text))
                 }
@@ -356,7 +524,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, useOnDevice)
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
                 // Answer sooner after you stop talking (default waits ~2 s)
                 putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900L)
                 putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 700L)
@@ -365,11 +533,19 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
             recognizer?.startListening(intent)
         } catch (e: Exception) {
             listening = false
+            listeningStartupPending = false
             call("onSpeechError", JSONObject.quote(e.message ?: "Could not start microphone."))
         }
     }
-    @JavascriptInterface fun stopListening() { main.post { try { recognizer?.stopListening() } catch (_: Exception) {} } }
-    @JavascriptInterface fun cancelListening() { main.post { listening = false; try { recognizer?.cancel() } catch (_: Exception) {} } }
+    @JavascriptInterface fun stopListening() { main.post {
+        if (offlineSpeech.isInstalled()) offlineSpeech.stop(false)
+        else try { recognizer?.stopListening() } catch (_: Exception) {}
+    } }
+    @JavascriptInterface fun cancelListening() { main.post {
+        listening = false; listeningStartupPending = false
+        if (offlineSpeech.isInstalled()) offlineSpeech.stop(true)
+        try { recognizer?.cancel() } catch (_: Exception) {}
+    } }
     fun speechError(message: String) = call("onSpeechError", JSONObject.quote(message))
-    fun close() { try { recognizer?.destroy() } catch (_: Exception) {}; try { tts?.stop(); tts?.shutdown() } catch (_: Exception) {}; try { ptTranslator?.close() } catch (_: Exception) {}; ptTranslator = null; worker.shutdownNow(); engine.close() }
+    fun close() { offlineSpeech.close(); try { recognizer?.destroy() } catch (_: Exception) {}; try { tts?.stop(); tts?.shutdown() } catch (_: Exception) {}; try { ptTranslator?.close() } catch (_: Exception) {}; ptTranslator = null; worker.shutdownNow(); engine.close() }
 }
