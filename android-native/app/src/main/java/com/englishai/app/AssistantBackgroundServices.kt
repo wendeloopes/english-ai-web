@@ -195,7 +195,7 @@ class HotwordListeningService : Service() {
                 .replace(Regex("[^a-z ]"), " ")
                 .replace(Regex("\\s+"), " ")
                 .trim()
-            // Speech recognizers often render spoken "A-I" as "a i", "eye", or "I".
+            // The activation phrase "hi english ai" can be transcribed as "a i", "eye", or "I".
             p = p.replace(Regex("\\ba\\s+i\\b"), "ai")
                 .replace(Regex("\\benglish\\s+i\\b"), "english ai")
                 .replace(Regex("\\b(eye|ay)\\b"), "ai")
@@ -235,10 +235,16 @@ class HotwordListeningService : Service() {
     private fun postHotwordNotification() {
         ensureAssistantChannels(this)
         val n = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, ALARM_CHANNEL) else Notification.Builder(this)
+        val openIntent = PendingIntent.getActivity(
+            this, 4044,
+            Intent(this, MainActivity::class.java).setAction(ACTION_HOTWORD_DETECTED)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         getSystemService(NotificationManager::class.java).notify(4044, n.setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("English AI heard you")
             .setContentText("Tap to open the assistant and continue.")
-            .setContentIntent(openAssistantIntent(this)).setAutoCancel(true).build())
+            .setContentIntent(openIntent).setAutoCancel(true).build())
     }
 
     private fun restartSoon() {
