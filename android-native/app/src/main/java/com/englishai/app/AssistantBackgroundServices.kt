@@ -9,6 +9,9 @@ import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
+import android.media.ToneGenerator
+import android.os.PowerManager
 import android.os.Build
 import android.os.IBinder
 import android.speech.RecognitionListener
@@ -218,6 +221,15 @@ class HotwordListeningService : Service() {
         // Handle the phrase once, stop recognition before opening the app, and let the
         // foreground activity own the microphone while the user speaks.
         activationHandled = true
+        // When the display is off, give a brief, low-volume confirmation tone only.
+        try {
+            val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!power.isInteractive) {
+                val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 35)
+                tone.startTone(ToneGenerator.TONE_PROP_ACK, 140)
+                android.os.Handler(mainLooper).postDelayed({ tone.release() }, 220)
+            }
+        } catch (_: Exception) {}
         restarting = true
         try { recognizer?.cancel() } catch (_: Exception) {}
         try { recognizer?.destroy() } catch (_: Exception) {}
