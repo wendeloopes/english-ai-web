@@ -339,6 +339,7 @@ async function ask(text){
   const ai={r:'ai',t:'',pt:''},hist=c.msgs.filter(m=>m.t);c.msgs.push(ai);persist();
   const e=$('msgs').querySelector('.empty');e&&e.remove();$('ctitle').textContent=c.title;
   bubble('me',text);const bub=bubble('ai','','');busy=true;setState('thinking');cap('');$('capPt').textContent='';
+  nativeTranslationId=String(my);nativeTranslationBubble=bub;nativeLivePt={};nativeLiveCount=0;nativePtFinal=false;
   let buf='',raw='',fed=0,first=true;const alive=()=>my===gen,speak=shouldSpeak();
   const flush=end=>{if(!speak)return;let m;
     for(;;){m=/^([\s\S]*?[.!?…]["”)]?)(\s+|$)/.exec(buf);
@@ -347,12 +348,14 @@ async function ask(text){
     if(end&&buf.trim()){enqueue(buf);buf=''}};
   try{
     await Brain.reply(hist,p=>{raw+=p;const sp=splitPt(raw);buf+=sp.en.slice(fed);fed=sp.en.length;ai.t=sp.en.trim();ai.pt=S.pt?sp.pt:'';
+      if(ai.pt)nativePtFinal=true;
       bub.firstChild.textContent=ai.t;if(ai.pt){bub.querySelector('.pt').textContent=ai.pt;$('capPt').textContent=ai.pt}
+      if(S.pt&&NB&&typeof NativeBridge.translate==='function'&&!sp.pt){const sentences=(sp.en.match(/[^.!?]+[.!?]+/g)||[]).map(s=>s.trim()).filter(Boolean);while(nativeLiveCount<sentences.length){const idx=nativeLiveCount++;NativeBridge.translate('live:'+my+':'+idx,sentences[idx]);}}
       $('msgs').scrollTop=1e9;
       if(!speak){state!=='speaking'&&setState('speaking');cap(esc(ai.t.slice(-170)))}flush(false)},alive);
   }catch(err){busy=false;if(alive())setState('idle');logErr('model',(err&&err.message)||err);persist();return}
   persist();if(!alive())return;
-  if(S.pt && NB && ai.t && typeof NativeBridge.translate==='function'){nativeTranslationId=String(my);nativeTranslationBubble=bub;NativeBridge.translate(nativeTranslationId,ai.t)}
+  if(S.pt && NB && ai.t && !ai.pt && typeof NativeBridge.translate==='function'){NativeBridge.translate(nativeTranslationId,ai.t)}
   flush(true);busy=false;if(!talking&&!q.length)idleAfter();
 }
 function splitPt(raw){const i=raw.indexOf('===');if(i>=0)return{en:raw.slice(0,i),pt:raw.slice(i).replace(/^=+\s*/,'').trim()};const m=/=+$/.exec(raw);return{en:m?raw.slice(0,m.index):raw,pt:''}}
@@ -429,7 +432,7 @@ $('wipe').onclick=()=>{if(confirm('Delete all conversations?')){chats=[];curId=n
 /* Native Android adapter: keep the approved UI; replace browser-only capabilities. */
 if (window.NativeBridge) {
   try{ $('ver').textContent='English Ai '+NativeBridge.getInfo(); }catch(e){}
-  let nativeTokenHandler=null, nativeDone=null, nativeSpeakingId='', nativeListening=false, nativeMicLevel=0, nativeTranslationId='', nativeTranslationBubble=null;
+  let nativeTokenHandler=null, nativeDone=null, nativeSpeakingId='', nativeListening=false, nativeMicLevel=0, nativeTranslationId='', nativeTranslationBubble=null, nativeLivePt={}, nativeLiveCount=0, nativePtFinal=false;
   window.Native = window.Native || {};
   window.Native.onModelStatus = (ok,label,msg) => { setStatus(label || (ok?'Gemma ready · offline':'Demo mode'),!!ok); $('prog').style.display='none'; if(msg) $('mstat').textContent=msg; };
   window.Native.onModelProgress = p => { $('prog').style.display='block'; $('prog').value=Math.max(0,Math.min(1,Number(p)||0)); };
@@ -439,8 +442,20 @@ if (window.NativeBridge) {
   window.Native.onTtsRange = (id,idx) => { if(id===nativeSpeakingId){ showCap(nativeSpeakingText,idx); orbPulse=Math.max(orbPulse,.55); lastRange=performance.now(); wordEnv=Math.max(wordEnv,.72); } };
   window.Native.onTtsDone = id => { if(id!==nativeSpeakingId)return; talking=false; if(q.length)pump(); else if(!busy)idleAfter(); };
   window.Native.onTranslation = (id,translated) => {
-    if(id!==nativeTranslationId || !nativeTranslationBubble)return;
     const pt=(translated||'').trim(); if(!pt)return;
+    const livePrefix='live:'+nativeTranslationId+':';
+    if(nativeTranslationId && typeof id==='string' && id.startsWith(livePrefix)){
+      if(nativePtFinal)return;
+      const idx=Number(id.slice(livePrefix.length)); if(!Number.isFinite(idx))return;
+      nativeLivePt[idx]=pt;
+      const merged=Object.keys(nativeLivePt).map(Number).sort((a,b)=>a-b).map(k=>nativeLivePt[k]).join(' ');
+      if(nativeTranslationBubble){const slot=nativeTranslationBubble.querySelector('.pt');if(slot)slot.textContent=merged;}
+      $('capPt').textContent=merged;
+      const c=cur(),last=c.msgs[c.msgs.length-1];if(last&&last.r==='ai'&&!last.pt){last.pt=merged;persist();}
+      return;
+    }
+    if(id!==nativeTranslationId || !nativeTranslationBubble)return;
+    nativePtFinal=true;
     const slot=nativeTranslationBubble.querySelector('.pt'); if(slot)slot.textContent=pt;
     $('capPt').textContent=pt;
     const c=cur(),last=c.msgs[c.msgs.length-1];
@@ -526,7 +541,11 @@ $('ghConn').onclick=async()=>{const repo=$('ghRepo').value.trim(),token=$('ghTok
 $('ghOff').onclick=()=>{try{localStorage.removeItem('echo.gh')}catch(e){}ghUI();toast('GitHub disconnected')};
 /* settings: name + Portuguese subtitles */
 $('nameIn').value=S.name||'';$('nameIn').oninput=e=>{S.name=e.target.value.trim().slice(0,24);sv('echo.set',S)};
-tg('tPt','pt');$('tPt').addEventListener('click',()=>{if(!S.pt){$('capPt').textContent='';return;} if(NB&&typeof NativeBridge.ptEnsure==='function'){ $('mstat').textContent='Preparing Portuguese subtitles…'; NativeBridge.ptEnsure(); }});
+tg('tPt','pt');$('tPt').addEventListener('click',()=>{if(!S.pt){$('capPt').textContent='';return;} if(NB&&typeof NativeBridge.ptEnsure==='function'){ $('mstat').textContent='Preparing Portuguese subtitles…'; NativeBridge.ptEnsure(); restorePortugueseCaption(); }});
+function restorePortugueseCaption(){if(!S.pt)return;const c=cur(),last=[...c.msgs].reverse().find(m=>m.r==='ai'&&m.pt);if(last){$('capPt').textContent=last.pt;const bs=$('msgs').querySelectorAll('.b.ai');const b=bs[bs.length-1];if(b){const slot=b.querySelector('.pt');if(slot)slot.textContent=last.pt;}}}
+function resumePortugueseSupport(){if(!S.pt)return;restorePortugueseCaption();if(NB&&typeof NativeBridge.ptEnsure==='function')NativeBridge.ptEnsure();}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(resumePortugueseSupport,250)});
+window.addEventListener('pageshow',()=>setTimeout(resumePortugueseSupport,250));
 /* hook native errors into the log */
 if(NB){
   const wrap=(k,fn)=>{const o=Native[k];Native[k]=function(){try{fn.apply(null,arguments)}catch(e){}return o&&o.apply(this,arguments)}};
