@@ -304,11 +304,12 @@ select,input[type=range],.txt{background:#132844;color:#f3f7ff;border:1px solid 
 </section>
 <section class="screen mainpage" id="models">
   <div class="pagehead"><div><div class="eyebrow">Execução no aparelho</div><h1>Modelos de IA</h1></div><button class="ico" id="modelsBack" aria-label="Voltar">‹</button></div>
-  <div class="heroPanel"><div class="eyebrow">Estado do modelo</div><h2 id="modelsStatus">Verificando modelo…</h2><p class="pageintro" id="modelsDescription">A IA deve usar um modelo local compatível. Nenhum fallback de IA na nuvem será configurado.</p><div class="actionline"><span class="pill">Processamento local</span><span class="pill">Sem API de IA</span></div></div>
+  <div class="heroPanel"><div class="eyebrow">Estado do modelo</div><h2 id="modelsStatus">Verificando modelo…</h2><p class="pageintro" id="modelsDescription">Escolha um modelo local ou ative explicitamente um assistente online. Offline continua sendo o padrão.</p><div class="actionline"><span class="pill">Offline por padrão</span><span class="pill">Online opcional</span></div></div>
   <div class="featurelist">
     <button class="featurecard" id="modelsChoose"><span class="featureicon"><svg class="i" viewBox="0 0 24 24"><path d="M12 16V3M7 8l5-5 5 5M4 15v5h16v-5"/></svg></span><span class="featurecopy"><b>Selecionar arquivo do modelo</b><small>Escolha um arquivo de modelo compatível no dispositivo.</small></span><span class="chev">›</span></button>
     <button class="featurecard" id="modelsRemove"><span class="featureicon"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6M14 10v6"/></svg></span><span class="featurecopy"><b>Remover modelo local</b><small>Libera espaço; será necessário selecionar o arquivo novamente.</small></span><span class="chev">›</span></button>
   </div>
+  <div class="featurelist" id="localModelPresets" style="margin-top:14px"><h2 style="font-size:18px;margin:4px 0">Modelos locais conhecidos</h2><p class="pageintro">Selecione o perfil apenas para orientar a escolha do arquivo. Isso não baixa, converte nem garante compatibilidade do modelo.</p><select class="txt" id="localModelPreset"><option value="auto">Detectar pelo arquivo (recomendado)</option><option value="llama">Llama 3.2</option><option value="gemma">Gemma 2</option><option value="phi">Phi-3 Mini</option><option value="mistral">Mistral 7B</option></select><div class="actionline"><button class="btn g" id="choosePresetModel" type="button">Escolher arquivo local</button><a href="https://github.com/google-ai-edge/LiteRT-LM" target="_blank" rel="noopener" style="color:#a7d7ff;font-size:12px">Formatos compatíveis</a></div></div>
   <div class="featurelist" id="aiModePanel" style="margin-top:14px">
     <h2 style="font-size:18px;margin:4px 0">Modo de IA</h2>
     <p class="pageintro">Offline é o padrão. Online só é usado quando você selecionar explicitamente e fornecer uma chave de API.</p>
@@ -320,6 +321,7 @@ select,input[type=range],.txt{background:#132844;color:#f3f7ff;border:1px solid 
     <p class="pagefootnote" id="aiModeStatus">Modo offline selecionado. Suas mensagens não serão enviadas à nuvem.</p>
     <div class="actionline"><button class="btn g" id="aiForgetKey" type="button">Limpar chave da sessão</button><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="color:#a7d7ff;font-size:12px">Obter chave</a></div>
   </div>
+  <div class="featurelist" style="margin-top:14px"><h2 style="font-size:18px;margin:4px 0">Outros assistentes online</h2><p class="pageintro">Estes atalhos abrem o serviço externo; não compartilham automaticamente o histórico do English AI.</p><div class="actionline"><button class="btn g" id="openChatGPTWeb" type="button">ChatGPT</button><button class="btn g" id="openClaudeWeb" type="button">Claude</button></div></div>
   <p class="pagefootnote">Llama 3.2, Gemma 2, Phi-3 Mini e Mistral 7B só funcionarão se o motor nativo instalado aceitar exatamente o formato e a quantização do arquivo selecionado. Selecionar um nome não instala nem converte o modelo.</p>
 </section>
 <nav id="bottomNav" aria-label="Navegação principal" hidden>
@@ -956,9 +958,12 @@ function refreshModelsPage(){
   const status=$('status')?.textContent||'Estado desconhecido';
   $('modelsStatus').textContent=status;
   const ok=/ready|loaded/i.test(status);
-  $('modelsDescription').textContent=ok?'O modelo está indicado como carregado. A geração permanece na implementação nativa local.':'Selecione um arquivo de modelo compatível. Sem modelo carregado, o aplicativo pode mostrar o modo de demonstração; nenhuma IA na nuvem será adicionada.';
+  $('modelsDescription').textContent=ok?'O modelo local está indicado como carregado.':'Selecione um arquivo local compatível ou ative o modo online de forma explícita.';
   $('moreVersion').textContent=($('ver')?.textContent||'English AI')+' · Conversas e preferências ficam no armazenamento local do app.';
 }
+$('choosePresetModel')?.addEventListener('click',()=>{try{if(NB&&typeof NativeBridge.pickModel==='function'){NativeBridge.pickModel();return}}catch(e){}$('file').click()});
+$('openChatGPTWeb')?.addEventListener('click',()=>openUrl('https://chatgpt.com/'));
+$('openClaudeWeb')?.addEventListener('click',()=>openUrl('https://claude.ai/new'));
 $('modelsChoose').onclick=()=>{
   try{if(NB&&typeof NativeBridge.pickModel==='function'){NativeBridge.pickModel();return;}}catch(e){}
   const label=$('file').parentElement.querySelector('label[for="file"]');if(label)label.click();else $('file').click();
