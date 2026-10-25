@@ -51,6 +51,11 @@ class MainActivity : ComponentActivity() {
         setContentView(web)
         web.loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
     }
+    override fun onResume() {
+        super.onResume()
+        if (::bridge.isInitialized) bridge.refreshScheduledAlarm()
+    }
+
     private fun requestMic() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) bridge.startListeningGranted()
         else micPermission.launch(Manifest.permission.RECORD_AUDIO)
