@@ -38,6 +38,7 @@ chk('Portuguese format + not-spoken split present',"function splitPt(raw)" in h 
 # Speech queue regression checks: exercise the real helper from index.html in Node.
 speech_match=re.search(r'function speechText\(s\)\s*\{[\s\S]*?\n\}',h)
 chk('speech queue strips Portuguese segment and UI labels',bool(speech_match))
+chk('streaming chat is autosaved with debounce and flushed on app hide', 'const schedulePersist=()=>{clearTimeout(persistTimer);persistTimer=setTimeout(()=>{persistTimer=0;persist()},300)};' in h and 'window.addEventListener(\'pagehide\',flushPersist)' in h and "if(document.hidden)flushPersist()" in h and 'schedulePersist();' in h)
 if speech_match:
     test_js = speech_match.group(0) + r"""
 const assert = require('assert');
