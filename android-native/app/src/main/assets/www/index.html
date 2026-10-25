@@ -49,6 +49,12 @@ svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke
 .mic{width:68px;height:68px;border-radius:50%;background:#fff;color:#000;display:grid;place-items:center;transition:transform .2s,box-shadow .3s}
 .mic svg{width:26px;height:26px}.mic.live{box-shadow:0 0 0 8px #ffffff22,0 0 40px #8fb4ff88;transform:scale(1.06)}
 .mic.stop{background:#ff4d5e;color:#fff}
+/* Voice activation: light-weight concentric waveform glow, active only while listening. */
+#voice::after{content:"";position:absolute;left:50%;top:48%;width:180px;height:180px;transform:translate(-50%,-50%);border:1px solid #8fb4ff00;border-radius:50%;pointer-events:none;opacity:0}
+#voice.voice-activated::after{opacity:1;animation:voiceRipple 1.8s ease-out infinite}
+#voice.voice-activated::before{content:"";position:absolute;left:50%;top:48%;width:140px;height:140px;transform:translate(-50%,-50%);border:1px solid #9aabff99;border-radius:50%;box-shadow:0 0 28px #8fb4ff33;pointer-events:none;animation:voiceRipple 1.8s ease-out infinite .6s}
+@keyframes voiceRipple{0%{width:110px;height:110px;opacity:.8;border-color:#9aabff99}100%{width:290px;height:290px;opacity:0;border-color:#8fb4ff00}}
+@media(prefers-reduced-motion:reduce){#voice.voice-activated::before,#voice.voice-activated::after{animation:none;opacity:.25}}
 /* chat */
 #chat{padding:0 16px 14px}
 #chat .top{padding:0 0}
@@ -507,6 +513,12 @@ if (window.NativeBridge) {
   listen = async function(){ if(state==='listening')return; stopAll(); heard=''; nativeListening=true; setState('listening'); cap('<span class="you">Say something in English…</span>'); NativeBridge.startListening(); };
   window.Native.onHotwordActivated = () => {
     if(state==='listening') return;
+    // Quiet, short confirmation tone plus visual listening ripple while the app is visible.
+    try {
+      const Ctx=window.AudioContext||window.webkitAudioContext;
+      if(Ctx){const ctx=new Ctx(),osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sine';osc.frequency.value=660;gain.gain.setValueAtTime(0.0001,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(0.055,ctx.currentTime+0.015);gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.16);osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+0.17);osc.onended=()=>ctx.close();}
+    } catch(e) {}
+    $('voice').classList.add('voice-activated');
     if(state==='thinking'||state==='speaking') stopAll();
     go('voice');
     setTimeout(()=>{ if(state==='idle') listen(); }, 500);
