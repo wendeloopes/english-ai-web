@@ -924,6 +924,104 @@ const _renderExisting=render;
 render=function(){_renderExisting();if($('savedList'))renderSaved();};
 syncBottomNav(document.querySelector('.screen.on')?.id||'welcome');
 
+
+/* ===== Expanded offline learning features (v1.3.4, local-only) ===== */
+(function enhancedLearningUI(){
+  const style=document.createElement('style');
+  style.textContent=`
+    .vocabStats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 4px}
+    .vocabStats>div{padding:12px 6px;text-align:center;border:1px solid #203a5d;border-radius:15px;background:#0d1d33}
+    .vocabStats b{display:block;color:#a7d7ff;font-size:20px}.vocabStats small{display:block;color:#8ea7c9;font-size:10px;margin-top:3px}
+    .vocabFilters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;padding:5px;background:#0b192d;border:1px solid #203a5d;border-radius:14px}
+    .vocabFilter{padding:9px 2px;border-radius:10px;color:#8ea7c9;font-size:11px}.vocabFilter.active{background:#17365a;color:#a7d7ff}
+    .lessonProgress{height:5px;display:block;background:#1a3555;border-radius:99px;overflow:hidden;margin-top:10px}.lessonProgress i{display:block;width:0;height:100%;background:linear-gradient(90deg,#3d91f5,#8bd6ff);border-radius:99px}
+    .drawerQuick{display:grid;gap:6px;margin-bottom:16px}.drawerQuick button{text-align:left;padding:12px;border:1px solid #203a5d;border-radius:12px;background:#10213a;color:#c9e4ff}
+    #plug .pcard{display:grid;gap:9px}.miniStatus{font-size:12px;color:#a7c8ee;line-height:1.5}
+  `;
+  document.head.appendChild(style);
+
+  // Requested practical tracks, with local progress counters.
+  const grid=document.querySelector('#lessons .lessongrid');
+  const lessonData=[
+    ['greetings','👋','Cumprimentos e Apresentações','Hello, nice to meet you, nomes e despedidas.','Let’s practice greetings and introductions. Ask one question at a time. If I make a serious grammar mistake or my meaning is unclear, naturally say “You mean…” and show the corrected phrase with a short explanation.'],
+    ['work','💼','No trabalho','Reuniões, colegas, pedidos e entrevistas.','Let’s practice English at work: introducing my role, asking for help, meetings, and job interviews. Correct serious grammar or meaning-blocking mistakes naturally with “You mean…” and a short explanation.'],
+    ['travel','✈️','Viagens e Turismo','Aeroporto, hotel, direções e passagens.','Let’s role-play travel English: airport check-in, asking directions, hotels, tickets, and solving travel problems. Ask one question at a time and correct serious errors contextually.'],
+    ['daily','🏙️','Vida no dia a dia','Rotina, compras, planos e conversas rápidas.','Let’s practice everyday English: routines, shopping, asking for information, making plans, and talking about yesterday. Correct serious errors with a natural “You mean…” correction.'],
+    ['food','🍽️','Comida e Restaurante','Fazer pedidos, ingredientes e conta.','Let’s role-play at a restaurant. Practice asking for a table, ordering food, ingredients, and paying the bill. Correct serious grammar or meaning errors gently and explain the natural phrase.']
+  ];
+  function localDay(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+  function progressData(){return ld('echo.lessonProgress',{})}
+  function drawLessonProgress(){
+    const p=progressData();
+    document.querySelectorAll('[data-progress]').forEach(el=>{const n=(p[el.dataset.progress]||{}).starts||0;el.style.width=Math.min(100,n*20)+'%'});
+    document.querySelectorAll('[data-progress-label]').forEach(el=>{const n=(p[el.dataset.progressLabel]||{}).starts||0;el.textContent=Math.min(100,n*20)+'% · '+n+' sessões iniciadas'});
+  }
+  if(grid){
+    grid.innerHTML=lessonData.map(([id,emoji,title,desc,prompt])=>'<button type="button" class="lesson enhancedLesson" data-enhanced-lesson="'+id+'"><span><span class="featureicon">'+emoji+'</span><b>'+title+'</b><small>'+desc+'</small><span class="lessonProgress"><i data-progress="'+id+'"></i></span><small data-progress-label="'+id+'">0% · 0 sessões iniciadas</small></span><span class="pill">Praticar ↗</span></button>').join('');
+    grid.querySelectorAll('[data-enhanced-lesson]').forEach(b=>b.addEventListener('click',()=>{
+      const id=b.dataset.enhancedLesson,prompt=lessonData.find(x=>x[0]===id)[4],p=progressData();p[id]=p[id]||{starts:0};p[id].starts=(p[id].starts||0)+1;p[id].lastStarted=Date.now();sv('echo.lessonProgress',p);drawLessonProgress();
+      startLesson(prompt);
+    }));
+  }
+  // Strengthen the existing tutor prompt: the model sees Vosk's recognized text, not raw phonetics.
+  const previousSysPrompt=sysPrompt;
+  sysPrompt=function(){let x=previousSysPrompt();x+=' During speaking practice, monitor the recognized transcript for serious grammar mistakes, wrong word choice, or errors that change meaning. When there is a meaningful error, intervene naturally with “You mean, …”, provide the corrected phrase, explain it in one short sentence, and ask the learner to repeat it. Do not claim acoustic pronunciation scoring: you only see the recognized transcript. Avoid interrupting for minor stylistic differences.';return x};
+
+  // Local vocabulary filters, favorites, daily review progress, pronunciation and Anki TSV export.
+  const vocabPage=$('vocab'),vocabForm=$('vocabForm'),vocabList=$('vocabList');
+  if(vocabPage&&vocabForm&&vocabList){
+    const tools=document.createElement('div');tools.innerHTML='<div class="vocabStats"><div><b id="enhLearned">0</b><small>aprendidas</small></div><div><b id="enhToday">0</b><small>revisadas hoje</small></div><div><b id="enhDays">0</b><small>dias com revisão</small></div></div><input class="formfield" id="enhVocabSearch" type="search" placeholder="Buscar palavra ou significado…" aria-label="Buscar vocabulário"><div class="vocabFilters" role="tablist" aria-label="Filtro do vocabulário"><button type="button" class="vocabFilter active" data-enh-filter="all">Todos</button><button type="button" class="vocabFilter" data-enh-filter="favorites">Favoritos</button><button type="button" class="vocabFilter" data-enh-filter="recent">Recentes</button><button type="button" class="vocabFilter" data-enh-filter="learned">Aprendidas</button></div><div class="row2"><button class="btn g" id="enhAnki" type="button">Exportar Anki (.txt)</button><button class="btn g" id="enhReview" type="button">Revisar agora</button></div>';
+    vocabForm.insertAdjacentElement('beforebegin',tools);
+    let filter='all';
+    function markReview(v){const day=localDay();v.lastReviewed=Date.now();v.lastReviewedDay=day;v.reviewDays=Array.from(new Set([...(v.reviewDays||[]),day]))}
+    function save(){if(!sv('echo.vocabulary',vocabItems)){toast('Não foi possível salvar no armazenamento local.');return false}return true}
+    function speakWord(word){try{if(NB&&typeof NativeBridge.speak==='function'){NativeBridge.speak('vocab-'+Date.now(),word,'0.9','');return}}catch(e){}try{if(window.speechSynthesis){const u=new SpeechSynthesisUtterance(word);u.lang='en-US';u.rate=.85;speechSynthesis.speak(u);return}}catch(e){}toast('Áudio indisponível neste dispositivo.')}
+    renderVocab=function(){
+      vocabList.innerHTML='';$('vocabCount').textContent=vocabItems.length+' '+(vocabItems.length===1?'palavra':'palavras');
+      $('enhLearned').textContent=vocabItems.filter(v=>v.learned).length;$('enhToday').textContent=new Set(vocabItems.filter(v=>v.lastReviewedDay===localDay()).map(v=>v.word.toLowerCase())).size;$('enhDays').textContent=new Set(vocabItems.flatMap(v=>v.reviewDays||[])).size;
+      const q=($('enhVocabSearch').value||'').trim().toLowerCase();
+      const rows=vocabItems.map((v,i)=>({...v,_index:i})).filter(v=>(filter!=='favorites'||v.favorite)&&(filter!=='learned'||v.learned)&&(filter!=='recent'||(v.lastReviewed&&Date.now()-v.lastReviewed<7*86400000))&&(!q||(v.word+' '+(v.meaning||'')).toLowerCase().includes(q))).sort((a,b)=>filter==='recent'?(b.lastReviewed||0)-(a.lastReviewed||0):0);
+      if(!rows.length){vocabList.innerHTML='<div class="emptyPage">Nenhuma palavra neste filtro. Adicione uma palavra ou escolha outra aba.</div>';return}
+      rows.forEach(v=>{const el=document.createElement('div');el.className='vocabitem';const copy=document.createElement('div');copy.style.cssText='flex:1;min-width:0';const w=document.createElement('b');w.textContent=v.word;const m=document.createElement('small');m.textContent=v.meaning||'Sem significado adicionado';const status=document.createElement('small');status.textContent=v.learned?'✓ Aprendida':(v.lastReviewed?'Revisada '+new Date(v.lastReviewed).toLocaleDateString():'Ainda não revisada');copy.append(w,m,status);
+        const button=(label,title,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.setAttribute('aria-label',title);b.onclick=fn;return b};
+        el.append(copy,button('🔊','Ouvir '+v.word,()=>speakWord(v.word)),button(v.favorite?'★':'☆','Favoritar '+v.word,()=>{vocabItems[v._index].favorite=!vocabItems[v._index].favorite;save();renderVocab()}),button(v.learned?'✓':'Aprendi','Marcar como aprendida',()=>{const x=vocabItems[v._index];x.learned=!x.learned;markReview(x);save();renderVocab()}),button('Praticar','Praticar '+v.word,()=>{const x=vocabItems[v._index];markReview(x);save();renderVocab();startLesson('Help me practice the English expression "'+x.word.replace(/["\\]/g,'')+'". Its Portuguese meaning is "'+(x.meaning||'not supplied').replace(/["\\]/g,'')+'". Give one natural example, then ask me to make my own sentence.')}),button('✕','Excluir '+v.word,()=>{if(confirm('Excluir "'+v.word+'"?')){vocabItems.splice(v._index,1);save();renderVocab()}}));vocabList.appendChild(el)
+      });
+    };
+    $('enhVocabSearch').addEventListener('input',renderVocab);
+    tools.querySelectorAll('[data-enh-filter]').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.enhFilter;tools.querySelectorAll('[data-enh-filter]').forEach(x=>x.classList.toggle('active',x===b));renderVocab()}));
+    $('enhAnki').onclick=()=>{if(!vocabItems.length)return toast('Adicione palavras antes de exportar.');const clean=x=>String(x||'').replace(/[\\t\\r\\n]+/g,' ').trim(),tsv=vocabItems.map(v=>clean(v.word)+'\\t'+clean(v.meaning)+'\\tEnglish AI').join('\\n');try{if(NB&&typeof NativeBridge.copyText==='function'){NativeBridge.copyText(tsv);toast('Cartões copiados. Importe no Anki como campos separados por tabulação.');return}const blob=new Blob(['\\ufeff'+tsv],{type:'text/tab-separated-values;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='english-ai-anki-'+localDay()+'.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Arquivo para Anki preparado.')}catch(e){toast('Exportação não disponível neste WebView.')}};
+    $('enhReview').onclick=()=>{const x=vocabItems.find(v=>!v.learned)||vocabItems[0];if(!x)return toast('Adicione palavras para revisar.');markReview(x);save();renderVocab();startLesson('Run a short spaced-repetition review for the English expression "'+x.word.replace(/["\\]/g,'')+'". Portuguese meaning: "'+(x.meaning||'not supplied').replace(/["\\]/g,'')+'". Ask me to recall the meaning, then show a natural example and ask me to use it in a sentence.')};
+    const oldSubmit=vocabForm.onsubmit;
+    vocabForm.addEventListener('submit',()=>setTimeout(()=>{const item=vocabItems.find(v=>v.word===$('vocabWord').value.trim());if(item){item.favorite=!!item.favorite;item.learned=!!item.learned;item.reviewDays=item.reviewDays||[];save();renderVocab()}},0));
+  }
+
+  // Add drawer quick access without removing the existing saved conversation list.
+  const drawer=$('drawer');
+  if(drawer&&!$('enhDrawerQuick')){
+    const q=document.createElement('div');q.id='enhDrawerQuick';q.className='drawerQuick';q.innerHTML='<button type="button" data-go="chat">Conversa</button><button type="button" data-go="lessons">Explorar aulas</button><button type="button" data-go="vocab">Biblioteca / Vocabulário</button><button type="button" data-go="settings">Configurações</button><button type="button" data-go="help">Ajuda</button><button type="button" data-go="exit">Sair</button>';
+    drawer.insertBefore(q,drawer.querySelector('#list'));
+    q.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{const id=b.dataset.go;closeAll();if(id==='settings'){$('sheet').classList.add('full-settings');panel('sheet',true)}else if(id==='help')toast('Ajuda: escolha uma aula, pratique no chat e salve palavras no vocabulário.');else if(id==='exit'){try{if(NB&&typeof NativeBridge.exitApp==='function')NativeBridge.exitApp();else toast('Para sair, use o botão Voltar do Android.')}catch(e){toast('Para sair, use o botão Voltar do Android.')}}else{if(id==='chat'){stopAll();render()}go(id)}});
+  }
+
+  // Move the existing native Vosk download controls into the Plugins / Model Manager panel.
+  const speech=$('voiceAssistantControls'),plugin=$('plug');
+  if(speech&&plugin){speech.style.margin='0';speech.style.background='#0d1d33';speech.style.borderColor='#203a5d';speech.querySelectorAll('small').forEach(x=>x.style.color='#9db8da');plugin.insertBefore(speech,plugin.querySelector('#plugDone'))}
+  const plug=$('plug');
+  if(plug&&!$('enhModelManager')){
+    const card=document.createElement('div');card.id='enhModelManager';card.className='pcard';card.innerHTML='<b>Modelo de IA local</b><small>Importe manualmente um arquivo compatível. A extensão não garante que o formato seja aceito pelo motor nativo.</small><div class="row2"><button class="btn" id="enhPickModel" type="button">Selecionar modelo</button><button class="btn g" id="enhManageModels" type="button">Gerenciar modelos</button></div><b>Fontes externas</b><small>Atalhos externos; não são integrações autenticadas do aplicativo.</small><div class="row2"><button class="btn g" id="enhGitHub" type="button">GitHub</button><button class="btn g" id="enhReddit" type="button">Reddit</button><button class="btn g" id="enhTeraBox" type="button">TeraBox</button></div><small>Conectividade: <span id="enhNetwork">verificando…</span>. Atualizações e downloads são sempre manuais; conversas não são enviadas para serviços de IA.</small><button class="btn g" id="enhRefreshNetwork" type="button">Atualizar conexão</button>';
+    plug.insertBefore(card,plug.querySelector('#plugDone'));
+    $('enhPickModel').onclick=()=>{try{if(NB&&typeof NativeBridge.pickModel==='function'){NativeBridge.pickModel();return}}catch(e){}const l=$('file').parentElement.querySelector('label[for="file"]');if(l)l.click();else $('file').click()};
+    $('enhManageModels').onclick=()=>{closeAll();go('models')};
+    $('enhGitHub').onclick=()=>openUrl('https://github.com/');$('enhReddit').onclick=()=>openUrl('https://www.reddit.com/');$('enhTeraBox').onclick=()=>openUrl('https://www.terabox.com/');
+    const net=()=>{$('enhNetwork').textContent=navigator.onLine?'Online — downloads manuais disponíveis':'Offline — IA e dados locais continuam disponíveis'};
+    $('enhRefreshNetwork').onclick=()=>{net();toast(navigator.onLine?'Conexão disponível.':'Sem conexão. Recursos locais permanecem disponíveis.')};addEventListener('online',net);addEventListener('offline',net);net();
+  }
+  // Keep the native file picker available only for supported local import flows.
+  $('file')?.setAttribute('accept','.bin,.tflite,.task,.litert,.model');
+  drawLessonProgress();
+  renderVocab();
+})();
+
 /* ================= START ================= */
 (function(){const sl=$('slide'),k=$('knob');let down=false,x0=0,max=0;const pos=x=>k.style.transform=`translateX(${x}px)`;
   sl.onpointerdown=e=>{down=true;x0=e.clientX;max=sl.clientWidth-54;sl.setPointerCapture(e.pointerId)};
