@@ -34,6 +34,23 @@ refs=set(re.findall(r'(?:src|href)="([^"#:]+\.(?:png|svg|jpg))"',h)); miss=[r fo
 chk('local resources referenced by index.html exist (assets or repo root, copied by workflow)',not miss,str(miss))
 chk('orb loop protected (try/catch + global extLevel)','extLevel' in h and '}catch(e){}})(0);' in h)
 chk('Portuguese format + not-spoken split present',"function splitPt(raw)" in h and "raw.indexOf('===')" in h and 'NativeBridge.translate' in h)
+
+# Speech queue regression checks: exercise the real helper from index.html in Node.
+speech_match=re.search(r'function speechText\\(s\\)\\s*\\{[\\s\\S]*?\\n\\}',h)
+chk('speech queue strips Portuguese segment and UI labels',bool(speech_match))
+if speech_match:
+    test_js = speech_match.group(0) + r"""
+const assert = require('assert');
+assert.strictEqual(speechText('Hello there. === Olá, tudo bem?'), 'Hello there.');
+assert.strictEqual(speechText('English AI: How are you?'), 'How are you?');
+assert.strictEqual(speechText('Assistant: I am fine.'), 'I am fine.');
+assert.strictEqual(speechText('<b>Hello</b> *there*!'), 'Hello there!');
+assert.strictEqual(speechText('   '), '');
+"""
+    open('/tmp/_speech_regression.js','w').write(test_js)
+    speech_run=subprocess.run(['node','/tmp/_speech_regression.js'],capture_output=True,text=True)
+    chk('speech queue regression tests (Node)',speech_run.returncode==0,speech_run.stderr.strip())
+
 chk('Portuguese fallback remains active in native mode',"ai.pt=S.pt?sp.pt:''" in h and 'Portuguese subtitles fallback' in h and 'Preparing Portuguese subtitles' in h)
 chk('Portuguese captions translate progressively while the answer streams',"NativeBridge.translate('live:'+my+':'+idx,sentences[idx])" in h and 'nativeLiveCount' in h)
 chk('Portuguese captions restore when app resumes', 'resumePortugueseSupport' in h and "document.addEventListener('visibilitychange'" in h and "window.addEventListener('pageshow'" in h)
