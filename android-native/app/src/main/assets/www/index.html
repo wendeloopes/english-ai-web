@@ -288,7 +288,15 @@ let nativeTranslationId='', nativeTranslationBubble=null, nativeLivePt={}, nativ
 
 const voices=()=>window.speechSynthesis?.getVoices?.().filter(v=>/^en/i.test(v.lang))||[];
 function pickVoice(){const v=voices();return v.find(x=>x.name===S.voice)||v.find(x=>x.lang==='en-US'&&/google|natural|samantha|aria|jenny|neural/i.test(x.name))||v.find(x=>x.lang==='en-US')||v[0]}
-function enqueue(s){s=s.replace(/[*#_`>]/g,'').trim();if(!s)return;q.push(s);pump()}
+function speechText(s){
+  // Speech receives only the English segment, never the bilingual subtitle or UI labels.
+  s=String(s||'').split(/\n\s*={2,}\s*\n|\s+={2,}\s*/)[0];
+  s=s.replace(/<[^>]*>/g,' ').replace(/[*#_`>]/g,' ');
+  s=s.replace(/^\s*(?:(?:english\s*(?:ai|ia|reply|response)|assistant)\s*[:：-]\s*)+/i,'');
+  s=s.replace(/\s+/g,' ').trim();
+  return s;
+}
+function enqueue(s){s=speechText(s);if(!s)return;q.push(s);pump()}
 function pump(){
   if(talking||!q.length)return;const s=q.shift();talking=true;
   const u=new SpeechSynthesisUtterance(s);u.voice=pickVoice();u.lang='en-US';u.rate=S.rate;
