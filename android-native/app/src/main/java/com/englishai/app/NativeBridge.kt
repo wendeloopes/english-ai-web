@@ -188,7 +188,13 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         }
     }
     fun refreshScheduledAlarm() {
-        if (isMorningAlarmEnabled()) MorningAlarmReceiver.scheduleNext(activity, 4, 40)
+        if (isMorningAlarmEnabled()) {
+            MorningAlarmReceiver.scheduleNext(activity, 4, 40)
+            val alarmManager = activity.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
+            if (Build.VERSION.SDK_INT < 31 || alarmManager.canScheduleExactAlarms()) {
+                call("onMorningAlarmStatus", "true", JSONObject.quote("Daily 04:40 exact alarm scheduled."))
+            }
+        }
     }
 
     @JavascriptInterface fun isMorningAlarmEnabled(): Boolean =
