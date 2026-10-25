@@ -258,7 +258,7 @@ async function startMeter(){
 }
 function level(t){
   if(state==='listening'){if(an){an.getByteFrequencyData(abuf);let s=0;for(const v of abuf)s+=v;return Math.min(1,s/abuf.length/90)}return window.NativeBridge ? (extLevel*=.95,Math.max(extLevel,.09+.05*Math.sin(t*3))) : .12+.3*Math.abs(Math.sin(t*3.1)*Math.sin(t*.9))}
-  if(state==='speaking')return .3+.4*Math.abs(Math.sin(t*8.3)*Math.sin(t*2.7))+Math.random()*.1;
+  if(state==='speaking')return NB ? Math.max(.035,Math.min(1,orbPulse)) : .3+.4*Math.abs(Math.sin(t*8.3)*Math.sin(t*2.7));
   if(state==='thinking')return .08+.06*Math.sin(t*4);return .05+.03*Math.sin(t*1.6);
 }
 
