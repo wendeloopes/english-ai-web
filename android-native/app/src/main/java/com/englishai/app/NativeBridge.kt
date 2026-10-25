@@ -74,6 +74,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
             refreshVoices()
         } }
     }
+    @JavascriptInterface fun exitApp() { main.post { activity.finish() } }
     private fun call(name: String, vararg args: String) { val code = "window.Native && window.Native." + name + " && window.Native." + name + "(" + args.joinToString(",") + ")"; main.post { web.evaluateJavascript(code, null) } }
     private fun status(ok: Boolean, label: String, msg: String) = call("onModelStatus", ok.toString(), JSONObject.quote(label), JSONObject.quote(msg))
     @JavascriptInterface fun loadModel() {
