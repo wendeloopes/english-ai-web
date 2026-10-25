@@ -152,11 +152,14 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     private val lifecycleLock = Any()
     /** Keep lifecycle transitions ordered with the delayed background-unload task. */
     fun setForeground(isForeground: Boolean) {
-        val shouldReload = synchronized(lifecycleLock) {
-            foreground = isForeground
-            if (isForeground && unloaded) { unloaded = false; true } else false
+        // Never make Android's main thread wait for engine.close() during app resume.
+        foreground = isForeground
+        if (isForeground) worker.execute {
+            val shouldReload = synchronized(lifecycleLock) {
+                if (unloaded) { unloaded = false; true } else false
+            }
+            if (shouldReload) loadPath()
         }
-        if (shouldReload) loadPath()
     }
     /** Called after the app stayed in the background: free RAM only if it is still backgrounded. */
     fun unloadForBackground() { worker.execute {
@@ -166,6 +169,13 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
                 unloaded = true
                 modelLoadFailure = "The model is reloading. Wait for Model ready."
             }
+        }
+        // The user may have returned while engine.close() was running. Recover on the worker.
+        if (foreground) {
+            val shouldReload = synchronized(lifecycleLock) {
+                if (unloaded) { unloaded = false; true } else false
+            }
+            if (shouldReload) loadPath()
         }
     } }
     fun reloadIfUnloaded() = setForeground(true)
