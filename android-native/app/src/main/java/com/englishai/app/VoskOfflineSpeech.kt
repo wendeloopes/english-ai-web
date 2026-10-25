@@ -167,29 +167,45 @@ class VoskOfflineSpeech(
                 ui { ready() }
                 val buffer = ShortArray(4096)
                 var speechStarted = false
-                // Vosk reports an endpoint when it detects silence after an utterance.
-                // Preserve that completed result and stop listening so the app can answer
-                // automatically instead of waiting forever for a manual stop.
+                var speechDetected = false
+                var lastVoiceAt = 0L
+                // A completed Vosk endpoint is preferred. A silence watchdog is a fallback
+                // for devices where endpoint detection does not fire reliably.
                 var endpointText = ""
                 while (listening) {
                     val n = audio.read(buffer, 0, buffer.size)
                     if (n <= 0) continue
-                    if (!speechStarted) { speechStarted = true; ui { started() } }
+                    var energy = 0.0
+                    for (i in 0 until n) {
+                        val sample = buffer[i].toInt()
+                        energy += sample.toDouble() * sample.toDouble()
+                    }
+                    val rms = kotlin.math.sqrt(energy / n)
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (rms > 350.0) {
+                        speechDetected = true
+                        lastVoiceAt = now
+                        if (!speechStarted) { speechStarted = true; ui { started() } }
+                    }
                     val bytes = ByteArray(n * 2)
                     for (i in 0 until n) {
                         bytes[i * 2] = (buffer[i].toInt() and 0xff).toByte()
                         bytes[i * 2 + 1] = (buffer[i].toInt() shr 8).toByte()
                     }
                     if (activeRecognizer.acceptWaveForm(bytes, bytes.size)) {
-                        val text = JSONObject(activeRecognizer.result).optString("text", "").trim()
-                        if (text.isNotBlank()) {
-                            endpointText = text
-                            ui { partial(text) }
-                            listening = false
-                        }
+                        endpointText = JSONObject(activeRecognizer.result).optString("text", "").trim()
+                        if (endpointText.isNotBlank()) ui { partial(endpointText) }
+                        if (speechDetected) listening = false
                     } else {
-                        val text = JSONObject(activeRecognizer.partialResult).optString("partial", "")
+                        val text = JSONObject(activeRecognizer.partialResult).optString("partial", "").trim()
                         if (text.isNotBlank()) ui { partial(text) }
+                    }
+                    // Some microphones/models never signal an endpoint. Finalize after
+                    // sustained silence following actual voice activity, but don't time out
+                    // while the learner is still speaking.
+                    if (speechDetected && now - lastVoiceAt >= 1800L) {
+                        endpointText = JSONObject(activeRecognizer.finalResult).optString("text", "").trim()
+                        listening = false
                     }
                 }
                 try { audio.stop() } catch (_: Exception) {}
