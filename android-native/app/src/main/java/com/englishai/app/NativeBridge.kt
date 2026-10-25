@@ -37,6 +37,8 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     @Volatile private var cancelled = false
     @Volatile private var listening = false
     @Volatile private var listeningStartupPending = false
+    // Retry one transient service disconnect without switching away from the offline provider.
+    @Volatile private var speechDisconnectRetries = 0
     @Volatile private var modelLoadFailure: String? = null
     private val modelFile get() = File(activity.filesDir, "model.litertlm")
     private val backupModelFile get() = File(activity.filesDir, "model.bak")
@@ -419,6 +421,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
                 try { activity.startService(Intent(activity, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_PAUSE)) } catch (_: Exception) {}
             }
             if (listening || listeningStartupPending) return@post
+            speechDisconnectRetries = 0
             if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
                 call("onSpeechError", JSONObject.quote("No speech recognition service is available. Check Android's Speech Recognition settings."))
                 return@post
@@ -458,9 +461,19 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
                 // until that terminal callback so a second recognizer cannot overlap the first.
                 override fun onEndOfSpeech() {}
                 override fun onError(error: Int) {
+                    // Android speech services can disconnect transiently during startup.
+                    // Recreate the SAME recognizer once; never switch to a cloud-capable provider.
+                    if (error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED &&
+                        speechDisconnectRetries < 1 && !cancelled) {
+                        speechDisconnectRetries++
+                        listening = false
+                        listeningStartupPending = true
+                        main.postDelayed({
+                            if (listeningStartupPending && !listening) beginListening(useOnDevice)
+                        }, 350)
+                        return
+                    }
                     listening = false
-                    // The user selected strict offline mode. Never retry with the default
-                    // recognizer here: Android may route that recognizer through a network service.
                     listeningStartupPending = false
                     val detail = when (error) {
                             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Android denied microphone access."
