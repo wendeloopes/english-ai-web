@@ -36,6 +36,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     private val ptLock = Any()
     @Volatile private var cancelled = false
     @Volatile private var listening = false
+    @Volatile private var listeningStartupPending = false
     @Volatile private var modelLoadFailure: String? = null
     private val modelFile get() = File(activity.filesDir, "model.litertlm")
     private val backupModelFile get() = File(activity.filesDir, "model.bak")
@@ -412,24 +413,36 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     @JavascriptInterface fun startListening() { main.post { requestMic() } }
     fun startListeningGranted() {
         main.post {
-            if (listening) return@post
+            // A hotword recognizer must release the microphone before push-to-talk starts.
+            if (activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
+                    .getBoolean("hotwordEnabled", false)) {
+                try { activity.startService(Intent(activity, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_PAUSE)) } catch (_: Exception) {}
+            }
+            if (listening || listeningStartupPending) return@post
             if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
                 call("onSpeechError", JSONObject.quote("No speech recognition service is available. Check Android's Speech Recognition settings."))
                 return@post
             }
-            // Prefer truly on-device recognition, but recover from ERROR_SERVER_DISCONNECTED (11)
-            // by retrying once with Android's default recognition service.
-            if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)) {
-                beginListening(useOnDevice = true)
-            } else {
-                beginListening(useOnDevice = false)
-            }
+            // Stop English speech playback before opening the microphone, then allow audio routing to settle.
+            try { tts?.stop() } catch (_: Exception) {}
+            listeningStartupPending = true
+            main.postDelayed({
+                if (listening) { listeningStartupPending = false; return@postDelayed }
+                if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)) {
+                    beginListening(useOnDevice = true)
+                } else {
+                    beginListening(useOnDevice = false)
+                }
+            }, 180)
         }
     }
 
     private fun beginListening(useOnDevice: Boolean) {
+        if (listening) { listeningStartupPending = false; return }
         try {
+            try { recognizer?.cancel() } catch (_: Exception) {}
             try { recognizer?.destroy() } catch (_: Exception) {}
+            listeningStartupPending = false
             listening = true
             recognizer = if (useOnDevice && Build.VERSION.SDK_INT >= 31) {
                 SpeechRecognizer.createOnDeviceSpeechRecognizer(activity)
@@ -441,17 +454,21 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
                 override fun onBeginningOfSpeech() { call("onSpeechStarted") }
                 override fun onRmsChanged(rmsdB: Float) { call("onLevel", (rmsdB / 12f).coerceIn(0f, 1f).toString()) }
                 override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() { listening = false }
+                // Android normally delivers onResults/onError after onEndOfSpeech. Keep the lock
+                // until that terminal callback so a second recognizer cannot overlap the first.
+                override fun onEndOfSpeech() {}
                 override fun onError(error: Int) {
                     listening = false
-                    if ((error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED ||
-                         error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE ||
-                         error == SpeechRecognizer.ERROR_NO_MATCH) && useOnDevice) {
-                        // On some phones, on-device recognition is advertised but the language pack is
-                        // missing, the service disconnects, or it fails to match speech. Retry
-                        // once with Android's default service. The useOnDevice flag prevents loops.
-                        main.postDelayed({ if (!listening) beginListening(useOnDevice = false) }, 250)
+                    if (error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED && useOnDevice) {
+                        // Only retry the default recognizer for a genuine service disconnect.
+                        // NO_MATCH is a normal user outcome, not a reason to reopen the microphone.
+                        listeningStartupPending = true
+                        main.postDelayed({
+                            if (!listening) beginListening(useOnDevice = false)
+                            else listeningStartupPending = false
+                        }, 350)
                     } else {
+                        listeningStartupPending = false
                         val detail = when (error) {
                             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Android denied microphone access."
                             SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "English speech recognition is unavailable on this phone. Install/update the Google app and Speech Recognition service, then download English (United States) speech/language data in their settings. You can still type your answer."
@@ -467,6 +484,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
                 }
                 override fun onResults(results: android.os.Bundle?) {
                     listening = false
+                    listeningStartupPending = false
                     val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                     call("onSpeechEnd", JSONObject.quote(text))
                 }
@@ -489,11 +507,12 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
             recognizer?.startListening(intent)
         } catch (e: Exception) {
             listening = false
+            listeningStartupPending = false
             call("onSpeechError", JSONObject.quote(e.message ?: "Could not start microphone."))
         }
     }
     @JavascriptInterface fun stopListening() { main.post { try { recognizer?.stopListening() } catch (_: Exception) {} } }
-    @JavascriptInterface fun cancelListening() { main.post { listening = false; try { recognizer?.cancel() } catch (_: Exception) {} } }
+    @JavascriptInterface fun cancelListening() { main.post { listening = false; listeningStartupPending = false; try { recognizer?.cancel() } catch (_: Exception) {} } }
     fun speechError(message: String) = call("onSpeechError", JSONObject.quote(message))
     fun close() { try { recognizer?.destroy() } catch (_: Exception) {}; try { tts?.stop(); tts?.shutdown() } catch (_: Exception) {}; try { ptTranslator?.close() } catch (_: Exception) {}; ptTranslator = null; worker.shutdownNow(); engine.close() }
 }
