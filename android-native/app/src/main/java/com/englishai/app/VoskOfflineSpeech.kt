@@ -155,6 +155,10 @@ class VoskOfflineSpeech(
                 ui { ready() }
                 val buffer = ShortArray(4096)
                 var speechStarted = false
+                // Vosk reports an endpoint when it detects silence after an utterance.
+                // Preserve that completed result and stop listening so the app can answer
+                // automatically instead of waiting forever for a manual stop.
+                var endpointText = ""
                 while (listening) {
                     val n = audio.read(buffer, 0, buffer.size)
                     if (n <= 0) continue
@@ -165,8 +169,12 @@ class VoskOfflineSpeech(
                         bytes[i * 2 + 1] = (buffer[i].toInt() shr 8).toByte()
                     }
                     if (activeRecognizer.acceptWaveForm(bytes, bytes.size)) {
-                        val text = JSONObject(activeRecognizer.result).optString("text", "")
-                        if (text.isNotBlank()) ui { partial(text) }
+                        val text = JSONObject(activeRecognizer.result).optString("text", "").trim()
+                        if (text.isNotBlank()) {
+                            endpointText = text
+                            ui { partial(text) }
+                            listening = false
+                        }
                     } else {
                         val text = JSONObject(activeRecognizer.partialResult).optString("partial", "")
                         if (text.isNotBlank()) ui { partial(text) }
@@ -174,7 +182,8 @@ class VoskOfflineSpeech(
                 }
                 try { audio.stop() } catch (_: Exception) {}
                 if (!cancelled) {
-                    val finalText = JSONObject(activeRecognizer.finalResult).optString("text", "")
+                    val finalText = if (endpointText.isNotBlank()) endpointText
+                        else JSONObject(activeRecognizer.finalResult).optString("text", "").trim()
                     ui { result(finalText) }
                 }
             } catch (e: Exception) {
