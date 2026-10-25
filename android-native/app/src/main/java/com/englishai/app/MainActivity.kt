@@ -64,7 +64,10 @@ class MainActivity : ComponentActivity() {
         if (intent != null) setIntent(intent)
         if (intent?.action == HotwordListeningService.ACTION_HOTWORD_DETECTED) {
             pendingHotwordActivation = true
-            pauseHotwordForActivation = true
+            // Also pause immediately when this Activity is already in the foreground;
+            // onNewIntent does not guarantee another onResume callback.
+            try { startService(Intent(this, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_PAUSE)) } catch (_: Exception) {}
+            pauseHotwordForActivation = false
             dispatchPendingHotwordActivation()
         }
     }
