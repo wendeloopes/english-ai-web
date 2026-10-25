@@ -117,6 +117,7 @@ class HotwordListeningService : Service() {
     private var tts: TextToSpeech? = null
     private var active = false
     private var restarting = false
+    private var activationHandled = false
 
     override fun onCreate() {
         super.onCreate()
@@ -129,13 +130,24 @@ class HotwordListeningService : Service() {
             .addAction(android.R.drawable.ic_media_pause, "Stop listening", stopIntent)
             .setOngoing(true).build())
         active = true
-        tts = TextToSpeech(this) { status -> if (status == TextToSpeech.SUCCESS) tts?.language = Locale.US }
         startRecognition()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) { stopSelf(); return START_NOT_STICKY }
+        when (intent?.action) {
+            ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
+            ACTION_PAUSE -> { pauseRecognition(); return START_STICKY }
+            ACTION_RESUME -> { activationHandled = false; restarting = false; active = true; startRecognition(); return START_STICKY }
+        }
         return START_STICKY
+    }
+
+    private fun pauseRecognition() {
+        active = false
+        restarting = false
+        try { recognizer?.cancel() } catch (_: Exception) {}
+        try { recognizer?.destroy() } catch (_: Exception) {}
+        recognizer = null
     }
 
     private fun startRecognition() {
@@ -176,19 +188,48 @@ class HotwordListeningService : Service() {
     }
 
     private fun checkPhrase(bundle: android.os.Bundle?, final: Boolean) {
+        if (!active || activationHandled) return
         val phrases = bundle?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: return
         val match = phrases.any { phrase ->
-            val p = phrase.lowercase(Locale.US).replace(Regex("[^a-z ]"), " ").replace(Regex("\\s+"), " ").trim()
-            p.contains("hi english ai") || p.contains("hey english ai") || p.contains("hello english ai") ||
-                p.contains("hi english a i") || p.contains("hey english a i")
+            var p = phrase.lowercase(Locale.US)
+                .replace(Regex("[^a-z ]"), " ")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+            // Speech recognizers often render spoken "A-I" as "a i", "eye", or "I".
+            p = p.replace(Regex("\\ba\\s+i\\b"), "ai")
+                .replace(Regex("\\benglish\\s+i\\b"), "english ai")
+                .replace(Regex("\\b(eye|ay)\\b"), "ai")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+            Regex("(?:^|\\s)(hi|hey|hello) english ai(?:\\s|$)").containsMatchIn(p)
         }
-        if (match) {
-            postHotwordNotification()
-            try { tts?.speak("I'm here. Tap the notification to start our conversation.", TextToSpeech.QUEUE_FLUSH, null, "hotword-ack") } catch (_: Exception) {}
-            // Avoid repeated activations while the user hears the acknowledgement.
-            restarting = true
-            android.os.Handler(mainLooper).postDelayed({ restarting = false; startRecognition() }, 2500)
+        if (!match) return
+
+        // Handle the phrase once, stop recognition before opening the app, and let the
+        // foreground activity own the microphone while the user speaks.
+        activationHandled = true
+        restarting = true
+        try { recognizer?.cancel() } catch (_: Exception) {}
+        try { recognizer?.destroy() } catch (_: Exception) {}
+        recognizer = null
+        postHotwordNotification()
+
+        val launch = Intent(this, MainActivity::class.java).apply {
+            action = ACTION_HOTWORD_DETECTED
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
+        try { startActivity(launch) } catch (_: Exception) {
+            // The notification remains the reliable fallback on Android versions that restrict
+            // starting an activity from the background.
+        }
+        android.os.Handler(mainLooper).postDelayed({
+            // If Android blocked the activity launch, keep the hands-free trigger available.
+            if (active) {
+                activationHandled = false
+                restarting = false
+                startRecognition()
+            }
+        }, 4000)
     }
 
     private fun postHotwordNotification() {
@@ -211,11 +252,16 @@ class HotwordListeningService : Service() {
         active = false
         getSharedPreferences("english_ai_user_settings", MODE_PRIVATE).edit().putBoolean("hotwordEnabled", false).apply()
         try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) {}
-        try { tts?.stop(); tts?.shutdown() } catch (_: Exception) {}
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
-    companion object { const val ACTION_START = "com.englishai.app.HOTWORD_START"; const val ACTION_STOP = "com.englishai.app.HOTWORD_STOP" }
+    companion object {
+        const val ACTION_START = "com.englishai.app.HOTWORD_START"
+        const val ACTION_STOP = "com.englishai.app.HOTWORD_STOP"
+        const val ACTION_PAUSE = "com.englishai.app.HOTWORD_PAUSE"
+        const val ACTION_RESUME = "com.englishai.app.HOTWORD_RESUME"
+        const val ACTION_HOTWORD_DETECTED = "com.englishai.app.HOTWORD_DETECTED"
+    }
 }
 
 
