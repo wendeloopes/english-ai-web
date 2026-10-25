@@ -208,7 +208,8 @@ const $=id=>document.getElementById(id),esc=s=>s.replace(/[&<>]/g,m=>({'&':'&amp
 const ld=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch(e){return d}},sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}};
 let S=Object.assign({speak:true,caps:true,hands:false,sfx:true,pt:true,name:'',rate:1,voice:''},ld('echo.set',{}));
 let chats=ld('echo.chats',[]),curId=ld('echo.cur',null),muted=false;
-const persist=()=>{if(sv('echo.chats',chats)){sv('echo.cur',curId);return}const current=chats.find(x=>x.id===curId);let saved=[...(current?[current]:[]),...chats.filter(x=>x.id!==curId)].slice(0,40).map(c=>({...c,msgs:(c.msgs||[]).slice(-60).map(m=>({...m,t:String(m.t||'').slice(0,2000),pt:String(m.pt||'').slice(0,2000)}))}));while(saved.length){if(sv('echo.chats',saved)){sv('echo.cur',curId);return}const i=saved.findIndex(c=>(c.msgs||[]).length>4);if(i>=0){saved[i]={...saved[i],msgs:saved[i].msgs.slice(-Math.max(4,Math.floor(saved[i].msgs.length/2)))};continue}if(saved.length>1){saved.pop();continue}return}};
+let persistWarnedAt=0;
+const persist=()=>{if(sv('echo.chats',chats)){sv('echo.cur',curId);return true}const now=Date.now();if(now-persistWarnedAt>10000){persistWarnedAt=now;const msg='O armazenamento está cheio: esta alteração pode não ser salva. Exporte ou libere espaço antes de continuar.';toast(msg);logErr('storage-quota',msg)}return false};
 let persistTimer=0;
 const schedulePersist=()=>{clearTimeout(persistTimer);persistTimer=setTimeout(()=>{persistTimer=0;persist()},300)};
 const flushPersist=()=>{clearTimeout(persistTimer);persistTimer=0;persist()};
