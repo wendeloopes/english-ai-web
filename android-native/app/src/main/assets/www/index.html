@@ -405,7 +405,7 @@ async function listen(){
   rec.onend=()=>{rec=null;if(state!=='listening')return;heard.trim()?ask(heard):setState('idle')};
   try{rec.start()}catch(e){setState('idle')}
 }
-function sendVoice(){if(rec)try{rec.stop()}catch(e){}}
+function sendVoice(){if(nativeListening&&NB&&typeof NativeBridge.stopListening==='function'){cap('<span class="you">Finishing your sentence…</span>');NativeBridge.stopListening();return}if(rec)try{rec.stop()}catch(e){}}
 const micAction=()=>{if(state==='listening')sendVoice();else if(state==='idle')listen();else stopAll()};
 $('mic').onclick=$('orb').onclick=micAction;
 $('cStop').onclick=stopAll;
@@ -495,7 +495,7 @@ if (window.NativeBridge) {
   window.Native.onSpeechReady = () => { if(state==='listening') cap('<span class="you">Listening now — speak in English…</span>'); };
   window.Native.onSpeechStarted = () => { extLevel=Math.max(extLevel,.5); if(state==='listening'&&!heard) cap('<span class="you">I hear you — keep speaking…</span>'); };
   window.Native.onSpeechPartial = text => { extLevel=Math.max(extLevel,.6); heard=text||''; cap('<span class="you">'+esc(heard)+'</span>'); };
-  window.Native.onSpeechEnd = text => { nativeListening=false; rec=null; if(state==='listening' && (text||heard).trim()) ask((text||heard).trim()); else if(state==='listening')setState('idle'); };
+  window.Native.onSpeechEnd = text => { nativeListening=false; rec=null; const finalText=(text||'').trim()||(heard||'').trim(); if(state==='listening'&&finalText) ask(finalText); else if(state==='listening'){cap('I couldn’t recognize that phrase. Try speaking a little closer to the microphone, then pause or tap the microphone to finish.');setState('idle');} };
   window.Native.onSpeechError = msg => { nativeListening=false; rec=null; if(state==='listening'){cap(esc(msg||'Speech recognition is unavailable. Type in chat.'));setState('idle');} };
   window.Native.onLevel = value => { nativeMicLevel=Math.max(0,Math.min(1,Number(value)||0)); extLevel=Math.max(extLevel,Math.min(1,nativeMicLevel*1.7)); };
   window.Native.onVoices = json => { try { const a=JSON.parse(json||'[]'),s=$('voiceSel'); s.innerHTML='<option value="">System default (US)</option>'+a.map(v=>'<option value="'+esc(v.name)+'">'+esc(v.name)+' ('+esc(v.lang)+')</option>').join(''); s.value=S.voice||''; } catch(e){} };
