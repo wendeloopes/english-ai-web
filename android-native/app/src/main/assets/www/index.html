@@ -1000,7 +1000,7 @@ syncBottomNav(document.querySelector('.screen.on')?.id||'welcome');
   if(drawer&&!$('enhDrawerQuick')){
     const q=document.createElement('div');q.id='enhDrawerQuick';q.className='drawerQuick';q.innerHTML='<button type="button" data-go="chat">Conversa</button><button type="button" data-go="lessons">Explorar aulas</button><button type="button" data-go="vocab">Biblioteca / Vocabulário</button><button type="button" data-go="settings">Configurações</button><button type="button" data-go="help">Ajuda</button><button type="button" data-go="exit">Sair</button>';
     drawer.insertBefore(q,drawer.querySelector('#list'));
-    q.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{const id=b.dataset.go;closeAll();if(id==='settings'){$('sheet').classList.add('full-settings');panel('sheet',true)}else if(id==='help')toast('Ajuda: escolha uma aula, pratique no chat e salve palavras no vocabulário.');else if(id==='exit'){try{if(NB&&typeof NativeBridge.exitApp==='function')NativeBridge.exitApp();else toast('Para sair, use o botão Voltar do Android.')}catch(e){toast('Para sair, use o botão Voltar do Android.')}}else{if(id==='chat'){stopAll();render()}go(id)}});
+    q.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{const id=b.dataset.go;closeAll();if(id==='settings'){$('sheet').classList.add('full-settings');panel('sheet',true)}else if(id==='help')toast('Ajuda: escolha uma aula, pratique no chat e salve palavras no vocabulário.');else if(id==='exit'){toast('Para sair, use o botão Voltar do Android.')}else{if(id==='chat'){stopAll();render()}go(id)}});
   }
 
   // Move the existing native Vosk download controls into the Plugins / Model Manager panel.
