@@ -182,6 +182,9 @@ progress{width:100%;height:6px;margin-top:8px;display:none}
   <div class="row"><div>AI model<small id="mstat">No model loaded. Running in demo mode.</small><progress id="prog" max="1" value="0"></progress></div>
     <label class="btn" for="file">Choose file</label><input type="file" id="file" hidden></div>
   <div class="row"><div>Remove model<small>Frees the space used on this phone.</small></div><button class="btn g" id="rmModel">Remove</button></div>
+  <div class="row"><div>Morning clock <small>Daily reminder to start English practice. Tap the notification to open the app.</small></div><div style="display:flex;gap:6px;align-items:center"><input type="time" id="clockMorning" value="05:30" aria-label="Morning reminder time"><button class="btn" id="saveMorning">Set</button></div></div>
+  <div class="row"><div>Evening clock <small>Daily reminder for your evening conversation.</small></div><div style="display:flex;gap:6px;align-items:center"><input type="time" id="clockEvening" value="20:30" aria-label="Evening reminder time"><button class="btn" id="saveEvening">Set</button></div></div>
+  <div class="row"><div>Clock status <small id="clockStatus">Choose a time and tap Set to enable a daily reminder.</small></div><button class="btn g" id="cancelClocks">Turn off</button></div>
   <div class="row"><div>Voice (US English)</div><select id="voiceSel"></select></div>
   <div class="row"><div>Speaking speed</div><input type="range" id="rate" min=".7" max="1.3" step=".05"></div>
   <div class="row"><div>Read replies aloud in chat<small>Hear the AI while it types.</small></div><button class="sw" id="tSpeak" role="switch"></button></div>
@@ -255,6 +258,33 @@ const NB=window.NativeBridge||null;let extLevel=0,orbPulse=0,wordEnv=0,lastRange
   }catch(e){}})(0);
 
 $('orb').addEventListener('pointerdown',()=>{orbPulse=1;if(typeof buzz==='function')buzz(8)});
+/* ================= DAILY PRACTICE CLOCK ================= */
+const clockDefaults={morning:'05:30',evening:'20:30'};
+let clocks=Object.assign({},clockDefaults,ld('echo.clocks',{}));
+$('clockMorning').value=clocks.morning;$('clockEvening').value=clocks.evening;
+function clockMsg(msg){$('clockStatus').textContent=msg;toast(msg)}
+function saveClock(slot){
+  const id=slot==='morning'?'clockMorning':'clockEvening', value=$(id).value;
+  if(!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(value)){clockMsg('Choose a valid time.');return}
+  clocks[slot]=value;sv('echo.clocks',clocks);
+  const [hour,minute]=value.split(':').map(Number);
+  if(NB&&typeof NativeBridge.scheduleDailyAlarm==='function'){
+    NativeBridge.scheduleDailyAlarm(slot,hour,minute);
+    clockMsg('Saving daily reminder…');
+  }else{
+    clockMsg('This browser version cannot schedule Android notifications. Install the native Android app.');
+  }
+}
+$('saveMorning').onclick=()=>saveClock('morning');
+$('saveEvening').onclick=()=>saveClock('evening');
+$('cancelClocks').onclick=()=>{
+  if(NB&&typeof NativeBridge.cancelDailyAlarm==='function'){
+    NativeBridge.cancelDailyAlarm('morning');NativeBridge.cancelDailyAlarm('evening');
+  }
+  clocks.enabled={morning:false,evening:false};sv('echo.clocks',clocks);
+  clockMsg('Daily reminders turned off.');
+};
+
 /* ================= MIC LEVEL ================= */
 let an=null,abuf=null,mstream=null;
 async function startMeter(){
