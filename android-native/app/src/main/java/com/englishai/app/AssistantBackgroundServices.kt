@@ -140,11 +140,19 @@ class HotwordListeningService : Service() {
 
     private fun startRecognition() {
         if (!active || restarting) return
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) { stopSelf(); return }
+        if (Build.VERSION.SDK_INT < 31 || !SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
+            ensureAssistantChannels(this)
+            val n = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, ASSISTANT_CHANNEL) else Notification.Builder(this)
+            getSystemService(NotificationManager::class.java).notify(4045, n.setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("Offline voice activation unavailable")
+                .setContentText("Install on-device English speech recognition, then enable “Hi, English AI!” again.")
+                .setContentIntent(openAssistantIntent(this)).setAutoCancel(true).build())
+            stopSelf()
+            return
+        }
         try {
             recognizer?.destroy()
-            recognizer = if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this))
-                SpeechRecognizer.createOnDeviceSpeechRecognizer(this) else SpeechRecognizer.createSpeechRecognizer(this)
+            recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
             recognizer?.setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params: android.os.Bundle?) {}
                 override fun onBeginningOfSpeech() {}
