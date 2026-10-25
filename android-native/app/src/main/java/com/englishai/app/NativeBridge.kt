@@ -30,6 +30,8 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     @Volatile private var listening = false
     @Volatile private var modelLoadFailure: String? = null
     private val modelFile get() = File(activity.filesDir, "model.litertlm")
+    private val backupModelFile get() = File(activity.filesDir, "model.bak")
+    private val tempModelFile get() = File(activity.filesDir, "model.tmp")
     private val legacyModelFile get() = File(activity.filesDir, "model.bin")
     private fun migrateLegacyModelIfNeeded() {
         // Older builds saved the model as model.bin. LiteRT-LM dispatches by extension,
@@ -54,108 +56,173 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     }
     private fun call(name: String, vararg args: String) { val code = "window.Native && window.Native." + name + " && window.Native." + name + "(" + args.joinToString(",") + ")"; main.post { web.evaluateJavascript(code, null) } }
     private fun status(ok: Boolean, label: String, msg: String) = call("onModelStatus", ok.toString(), JSONObject.quote(label), JSONObject.quote(msg))
-    @JavascriptInterface fun loadModel() { try { migrateLegacyModelIfNeeded() } catch (e: Exception) { status(false, "Model error", e.message ?: "Could not prepare the model file."); return }; if (!modelFile.exists()) { modelLoadFailure = "No local model is installed. Open Settings, choose a compatible .litertlm file, and wait until the status says Model ready."; status(false, "Model required", "No model is installed on this phone. Open Settings and import a compatible .litertlm file. The app can display the interface without a model, but AI replies need one."); return }; loadPath() }
-    private fun loadPath() {
-        // LiteRT-LM memory-maps model weights; total RAM is a safer coarse guard than
-        // Android availableMem, which can look low even when the OS can reclaim cache.
-        val modelBytes = modelFile.length()
-        val am = activity.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-        val memory = android.app.ActivityManager.MemoryInfo()
-        am.getMemoryInfo(memory)
-        if (memory.totalMem < modelBytes * 13L / 10L) {
-            val gb = String.format(Locale.US, "%.1f", memory.totalMem / 1073741824.0)
-            val detail = "This phone has about $gb GB of RAM and the model file is ${modelBytes / 1048576L} MB. " +
-                "For phones with 4 GB of RAM use Gemma 4 E2B (about 2.6 GB, file gemma-4-E2B-it.litertlm). " +
-                "Gemma 4 E4B (about 3.6 GB) needs a phone with 6 GB of RAM or more."
-            modelLoadFailure = detail
-            status(false, "Model too large for this phone", detail)
+    @JavascriptInterface fun loadModel() {
+        try {
+            // Recover a backup if Android stopped the app between renaming the old model
+            // and installing the new one. Never leave a valid backup stranded.
+            if (!modelFile.exists() && backupModelFile.exists()) {
+                check(backupModelFile.renameTo(modelFile)) { "The previous model backup could not be restored. Re-import the model from Settings." }
+            }
+            tempModelFile.delete() // a .tmp file is never a committed model
+            migrateLegacyModelIfNeeded()
+        } catch (e: Exception) {
+            status(false, "Model error", e.message ?: "Could not prepare the model file.")
             return
         }
-
+        if (!modelFile.exists()) {
+            modelLoadFailure = "No local model is installed. Open Settings, choose a compatible .litertlm file, and wait until the status says Model ready."
+            status(false, "Model required", "No model is installed on this phone. Open Settings and import a compatible .litertlm file. The app can display the interface without a model, but AI replies need one.")
+            return
+        }
+        loadPath()
+    }
+    /** Blocking. RAM sanity check + load + warm-up. Returns null on success, or the error text. Call on the worker thread. */
+    private fun doLoad(): String? {
+        val modelBytes = modelFile.length()
+        // LiteRT-LM memory-maps the big embedding tables, so Android does not need "free" RAM equal to the file size.
+        // Refuse only when the phone's TOTAL RAM is clearly too small for this model file.
+        val total = totalRam()
+        if (total < modelBytes * 13L / 10L) {
+            val gb = String.format(Locale.US, "%.1f", total / 1073741824.0)
+            return "This phone has about $gb GB of RAM and the model file is ${modelBytes / 1048576L} MB. " +
+                "For phones with 4 GB of RAM use Gemma 4 E2B (about 2.6 GB, file gemma-4-E2B-it.litertlm). " +
+                "Gemma 4 E4B (about 3.6 GB) needs a phone with 6 GB of RAM or more."
+        }
+        return try {
+            engine.load(modelFile.absolutePath, total)
+            try { engine.generate("warmup", 0, "Reply with one word.", listOf("user" to "Hi")) { _ -> }; engine.trimConversation() } catch (_: Exception) {}   // first run is slow: do it now, not on your first question
+            null
+        } catch (e: Throwable) {
+            try { engine.close() } catch (_: Exception) {}
+            e.message ?: "Could not load this model file. Check that it is a compatible LiteRT-LM .litertlm model."
+        }
+    }
+    private fun reportLoad(err: String?, okMsg: String) {
+        if (err == null) { modelLoadFailure = null; status(true, "Model ready · offline", okMsg) }
+        else { modelLoadFailure = err; status(false, if (err.startsWith("This phone has")) "Model too large for this phone" else "Model error", err) }
+    }
+    private fun loadPath() {
         modelLoadFailure = "The model is still loading. Wait for the Model ready status before sending a message."
-        status(false, "Loading model safely…", "Available RAM check passed. Loading with the CPU backend to reduce GPU-driver instability.")
+        status(false, "Loading model…", "Loading in memory-saving mode. This can take up to a minute the first time.")
         worker.execute {
-            try {
-                engine.load(modelFile.absolutePath, totalRam())
-                modelLoadFailure = null
-                status(true, "Model ready · offline", "Model loaded in stability mode (CPU). Replies may be slower, but this avoids GPU initialization on this device.")
-            } catch (e: Exception) {
-                modelLoadFailure = e.message ?: "Could not load this model file. Check that it is a compatible LiteRT-LM .litertlm model."
-                status(false, "Model error", modelLoadFailure!!)
+            val err = doLoad()
+            if (err == null) {
+                backupModelFile.delete() // a surviving backup means the app was interrupted mid-import
+                tempModelFile.delete()
+                reportLoad(null, "Model loaded in stability mode (CPU).")
+            } else if (backupModelFile.exists()) {
+                // If a process was killed after the file swap but before validating the new
+                // model, roll back automatically instead of trapping the user on a broken model.
+                try { engine.close() } catch (_: Exception) {}
+                modelFile.delete()
+                if (backupModelFile.renameTo(modelFile)) {
+                    val rollbackError = doLoad()
+                    if (rollbackError == null) {
+                        tempModelFile.delete()
+                        reportLoad(null, "The previous model was restored after an interrupted update.")
+                    } else {
+                        reportLoad(rollbackError, "")
+                    }
+                } else {
+                    reportLoad(err + " The previous model backup could not be restored.", "")
+                }
+            } else {
+                reportLoad(err, "")
             }
         }
     }
     private fun totalRam(): Long {
         val am = activity.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-        val mi = android.app.ActivityManager.MemoryInfo()
-        am.getMemoryInfo(mi)
-        return mi.totalMem
+        val mi = android.app.ActivityManager.MemoryInfo(); am.getMemoryInfo(mi); return mi.totalMem
     }
+    /** Shown in Settings so you can confirm which build is installed. */
     @JavascriptInterface fun getInfo(): String {
         val v = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName } catch (_: Exception) { "?" }
         return "v$v · RAM " + String.format(Locale.US, "%.1f", totalRam() / 1073741824.0) + " GB"
     }
     @Volatile private var unloaded = false
+    /** Called by the activity after the app stayed in the background for a while: frees the model's RAM. */
     fun unloadForBackground() { worker.execute { if (modelFile.exists() && modelLoadFailure == null) { engine.close(); unloaded = true; modelLoadFailure = "The model is reloading. Wait for Model ready." } } }
     fun reloadIfUnloaded() { if (unloaded) { unloaded = false; loadPath() } }
     fun trimMemory() { worker.execute { engine.trimConversation() } }
-
+    @JavascriptInterface fun copyText(text: String) { main.post { try { val cm = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager; cm.setPrimaryClip(android.content.ClipData.newPlainText("English Ai", text)) } catch (_: Exception) {} } }
+    @JavascriptInterface fun openUrl(url: String) { main.post { try { if (url.startsWith("https://")) activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {} } }
+    /** Text of the last crash / system kill (low memory, native crash...), or "". Read once at startup by the error log. */
+    @JavascriptInterface fun getLastCrash(): String {
+        val sb = StringBuilder()
+        try { val f = File(activity.filesDir, "last_crash.txt"); if (f.exists()) { sb.append(f.readText()); f.delete() } } catch (_: Exception) {}
+        if (Build.VERSION.SDK_INT >= 30) try {
+            val am = activity.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            val prefs = activity.getSharedPreferences("ea", android.content.Context.MODE_PRIVATE)
+            val seen = prefs.getLong("exitTs", 0L)
+            am.getHistoricalProcessExitReasons(activity.packageName, 0, 3).firstOrNull { it.timestamp > seen }?.let { r ->
+                prefs.edit().putLong("exitTs", r.timestamp).apply()
+                val bad = listOf(android.app.ApplicationExitInfo.REASON_CRASH, android.app.ApplicationExitInfo.REASON_CRASH_NATIVE,
+                    android.app.ApplicationExitInfo.REASON_LOW_MEMORY, android.app.ApplicationExitInfo.REASON_SIGNALED,
+                    android.app.ApplicationExitInfo.REASON_ANR, android.app.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE,
+                    android.app.ApplicationExitInfo.REASON_INITIALIZATION_FAILURE)
+                if (r.reason in bad) { if (sb.isNotEmpty()) sb.append("\n\n"); sb.append("Previous run ended: reason code ${r.reason} (${r.description ?: "no description"}) at ${java.util.Date(r.timestamp)}") }
+            }
+        } catch (_: Throwable) {}
+        return sb.toString().trim()
+    }
     @JavascriptInterface fun pickModel() = main.post { choose() }
+    /** Safe import: copy to a temp file, check size/space, swap files, and ROLL BACK to the previous model if the new one fails. */
     fun importModel(uri: Uri) { worker.execute {
-        val wasModelReady = modelLoadFailure == null
-        val temp = File(activity.filesDir, "model.tmp")
-        var engineClosed = false
+        val temp = File(activity.filesDir, "model.tmp"); val backup = File(activity.filesDir, "model.bak")
+        var swapped = false
         try {
             val meta = activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
             var expected = -1L
-            var sourceName: String? = null
-            meta.use { c ->
-                if (c != null && c.moveToFirst()) {
-                    sourceName = if (c.isNull(0)) null else c.getString(0)
-                    if (!c.isNull(1)) expected = c.getLong(1)
-                }
-            }
-            require(sourceName?.endsWith(".litertlm", ignoreCase = true) == true) {
-                "Choose a compatible LiteRT-LM model ending in .litertlm. The web .task model cannot be used directly in this Android app."
-            }
-            modelLoadFailure = "The model import is in progress. Wait until loading finishes before sending a message."
-            unloaded = false
-            temp.delete()
-            activity.contentResolver.openInputStream(uri).use { input ->
-                requireNotNull(input) { "Could not open selected file." }.use { src ->
-                    temp.outputStream().use { dst ->
-                        val buf = ByteArray(1024 * 1024)
-                        var n: Int
-                        var total = 0L
-                        while (src.read(buf).also { n = it } > 0) {
-                            dst.write(buf, 0, n)
-                            total += n
-                            if (expected > 0) call("onModelProgress", (total.toDouble() / expected).coerceIn(0.0, 1.0).toString())
-                        }
-                    }
-                }
-            }
+            meta.use { c -> if (c != null && c.moveToFirst()) { if (!c.isNull(1)) expected = c.getLong(1) } }
+            val free = android.os.StatFs(activity.filesDir.absolutePath).availableBytes
+            val need = (if (expected > 0) expected else 0L) + 256L * 1024 * 1024
+            require(free >= need) { "Not enough storage: about ${need / 1048576} MB free is needed, only ${free / 1048576} MB available. Free some space and try again." }
+            temp.delete(); backup.delete()
+            activity.contentResolver.openInputStream(uri).use { input -> requireNotNull(input) { "Could not open selected file." }.use { src -> temp.outputStream().use { dst -> val buf = ByteArray(1024 * 1024); var n: Int; var total = 0L; var lastPct = -1; while (src.read(buf).also { n = it } > 0) { dst.write(buf, 0, n); total += n; if (expected > 0) { val pct = (total * 100 / expected).toInt(); if (pct != lastPct) { lastPct = pct; call("onModelProgress", (pct / 100.0).toString()) } } } } } }
+            if (expected > 0) require(temp.length() == expected) { "The copy was interrupted (got ${temp.length() / 1048576} of ${expected / 1048576} MB). Try again." }
             require(temp.length() > 1024 * 1024) { "The selected file is too small to be a language model." }
-            // Copy and validate the selected file before releasing the currently loaded model.
-            // A cancelled or failed copy therefore does not unnecessarily unload a working model.
+            // The new file is complete. Now swap, keeping the old model as a backup until the new one loads.
             engine.close()
-            engineClosed = true
-            if (modelFile.exists()) check(modelFile.delete()) { "Could not replace the existing model file." }
+            val hadOld = modelFile.exists()
+            if (hadOld) check(modelFile.renameTo(backup)) { "Could not prepare the model swap." }
+            swapped = true
             check(temp.renameTo(modelFile)) { "Could not save the model in private app storage." }
-            status(false, "Loading model…", "Model saved as ${modelFile.name} (${modelFile.length() / 1024 / 1024} MB). Initializing LiteRT-LM…")
-            loadPath()
-        } catch (e: Exception) {
+            modelLoadFailure = "The model is still loading. Wait for the Model ready status before sending a message."
+            status(false, "Loading model…", "New model saved (${modelFile.length() / 1048576} MB). Initializing…")
+            val err = doLoad()
+            if (err == null) { backup.delete(); reportLoad(null, "New model loaded.") }
+            else {
+                modelFile.delete()
+                if (hadOld && backup.renameTo(modelFile)) {
+                    val again = doLoad()
+                    if (again == null) reportLoad(null, "The new file could not be used ($err). Your previous model was restored and is working.")
+                    else reportLoad(again, "")
+                } else reportLoad(err, "")
+            }
+        } catch (e: Throwable) {
             temp.delete()
-            modelLoadFailure = if (wasModelReady && !engineClosed) null else (e.message ?: "Could not import model.")
-            status(false, "Import failed", e.message ?: "Could not import model.")
+            if (swapped && backup.exists()) {
+                try { engine.close() } catch (_: Exception) {}
+                modelFile.delete()
+                backup.renameTo(modelFile)
+            }
+            if (modelFile.exists()) {
+                val again = doLoad()
+                if (again == null) reportLoad(null, "Import failed (${e.message}). Your previous model was kept and is working.")
+                else reportLoad(again, "")
+            } else {
+                modelLoadFailure = e.message
+                status(false, "Import failed", e.message ?: "Could not import model.")
+            }
         }
     } }
-    @JavascriptInterface fun removeModel() { worker.execute { unloaded = false; engine.close(); modelFile.delete(); File(activity.filesDir, "model.tmp").delete(); modelLoadFailure = "The local model was removed. Import a compatible .litertlm file in Settings before starting an AI conversation."; status(false, "Demo mode", "Model removed from this phone.") } }
+    @JavascriptInterface fun removeModel() { worker.execute { engine.close(); modelFile.delete(); File(activity.filesDir, "model.tmp").delete(); modelLoadFailure = "The local model was removed. Import a compatible .litertlm file in Settings before starting an AI conversation."; status(false, "Demo mode", "Model removed from this phone.") } }
     @JavascriptInterface fun generate(json: String) { cancelled = false; worker.execute { try {
         if (modelLoadFailure != null) throw IllegalStateException(modelLoadFailure)
         val root = JSONObject(json); val arr = root.optJSONArray("messages") ?: JSONArray(); val messages = mutableListOf<Pair<String, String>>()
         for (i in 0 until arr.length()) { val m = arr.getJSONObject(i); messages += Pair(m.optString("role"), m.optString("content")) }
-        engine.generate(root.optString("chat"), root.optInt("count", messages.size), root.optString("system"), messages) { piece -> if (!cancelled) call("onToken", JSONObject.quote(piece)) }
+        engine.generate(root.optString("chat"), root.optInt("count", 0), root.optString("system"), messages) { piece -> if (!cancelled) call("onToken", JSONObject.quote(piece)) }
         call("onGenDone")
     } catch (e: Exception) { if (cancelled) call("onGenDone") else call("onGenError", JSONObject.quote(e.message ?: "Model generation failed.")) } } }
     @JavascriptInterface fun cancelGenerate() { cancelled = true; engine.cancel() }
@@ -235,6 +302,10 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                 putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, useOnDevice)
+                // Answer sooner after you stop talking (default waits ~2 s)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 700L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 400L)
             }
             recognizer?.startListening(intent)
         } catch (e: Exception) {

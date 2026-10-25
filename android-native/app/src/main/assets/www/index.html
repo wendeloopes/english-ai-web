@@ -89,6 +89,20 @@ svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke
 select,input[type=range]{max-width:55%;background:#1c1930;color:#fff;border:0;border-radius:10px;padding:8px;font:inherit;font-size:13px}
 progress{width:100%;height:6px;margin-top:8px;display:none}
 @media (prefers-reduced-motion:reduce){#splash .logo{animation:none}.screen,#drawer,#sheet{transition:none}}
+#plug,#errs{position:absolute;left:0;right:0;bottom:0;max-height:88%;overflow-y:auto;background:#0b0914;border-top:1px solid var(--line);border-radius:22px 22px 0 0;z-index:21;transform:translateY(105%);transition:transform .3s;padding:18px 18px calc(env(safe-area-inset-bottom,0px) + 22px)}
+#plug.on,#errs.on{transform:none}#plug h3,#errs h3{font-size:18px;font-weight:600;margin-bottom:6px}
+.txt{background:#1c1930;color:#fff;border:0;border-radius:10px;padding:10px;font:inherit;font-size:14px;max-width:46%}
+#plug input{width:100%;background:#1c1930;color:#fff;border:0;border-radius:10px;padding:11px;font:inherit;font-size:14px;margin-top:8px}
+.pcard{background:#12101c;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}.pcard b{display:block}.pcard small{display:block;color:var(--mute);font-size:12px;line-height:1.4;margin-top:3px}
+.row2{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.eit{background:#12101c;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}.eit .eh{display:flex;justify-content:space-between;gap:8px}.eit small{color:var(--mute);font-size:11px}
+.eit pre{white-space:pre-wrap;word-break:break-word;font:12px/1.4 ui-monospace,monospace;color:#cfcde0;margin:8px 0;max-height:110px;overflow:auto}
+.eb{display:flex;gap:6px;flex-wrap:wrap}.eb button{background:#fff;color:#000;border-radius:16px;padding:0 12px;height:34px;font-size:13px;font-weight:600}.eb button.g{background:#1c1930;color:#fff}.eb button:disabled{opacity:.35}
+.empty2{color:var(--mute);text-align:center;padding:24px 0}.note{color:var(--mute);font-size:12px;margin:0 0 12px}
+#errBanner{display:none;align-self:center;align-items:center;gap:6px;margin-top:2px;background:#2a1a12;color:#ffb98a;border:1px solid #5a3519;border-radius:16px;padding:6px 12px;font-size:12px}
+#toast{position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 90px);transform:translateX(-50%);background:#fff;color:#000;padding:10px 16px;border-radius:14px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .25s;z-index:40;max-width:86%;text-align:center}#toast.on{opacity:1}
+.pt{font-size:12.5px;color:var(--vio2);opacity:.9;margin-top:8px;padding-top:7px;border-top:1px dashed #ffffff22;line-height:1.4}.pt:empty{display:none}
+#capPt{width:100%;min-height:34px;padding:0 24px 10px;text-align:center;font-size:14px;line-height:1.35;color:var(--vio2);opacity:.92}
 </style>
 </head>
 <body>
@@ -113,9 +127,11 @@ progress{width:100%;height:6px;margin-top:8px;display:none}
     <button class="chip2" id="status">Demo mode</button>
     <button class="ico" id="vGear" aria-label="Settings"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 014 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 010 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg></button>
   </div>
+  <button id="errBanner"><span></span> ›</button>
   <div id="vtitle"></div>
   <canvas id="orb" aria-label="Tap to talk"></canvas>
   <div id="cap" aria-live="polite"></div>
+  <div id="capPt" aria-live="polite"></div>
   <div class="ctrls">
     <button class="ctl" id="toChat" aria-label="Open chat"><svg class="i" viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.6A8 8 0 1121 12z"/></svg></button>
     <button class="mic" id="mic" aria-label="Talk"></button>
@@ -138,6 +154,23 @@ progress{width:100%;height:6px;margin-top:8px;display:none}
   </div>
 </section>
 
+<div id="plug">
+  <h3>Plugins</h3><p class="note">Where your error reports can go. Needs internet only when you send.</p>
+  <div class="pcard"><b>Claude</b><small>Claude does not allow other apps to sign in to your account. So the report is copied and Claude opens: just paste it.</small></div>
+  <div class="pcard"><b>ChatGPT</b><small>Same idea: the report is copied and ChatGPT opens for you to paste.</small></div>
+  <div class="pcard"><b>GitHub</b><small id="ghStat">Not connected.</small>
+    <input id="ghRepo" placeholder="owner/repository" autocapitalize="none" autocomplete="off">
+    <input id="ghTok" type="password" placeholder="Token (Issues: read &amp; write)" autocomplete="off">
+    <div class="row2"><button class="btn" id="ghConn">Connect</button><button class="btn g" id="ghOff">Disconnect</button><button class="btn g" id="ghHelp">Get a token</button></div>
+    <small>Saved only inside this app. Errors become Issues in your repo.</small></div>
+  <button class="btn" id="plugDone" style="width:100%">Done</button>
+</div>
+<div id="errs">
+  <h3>Error log</h3><p class="note" id="errNote"></p>
+  <div id="errList"></div>
+  <div class="row2"><button class="btn g" id="errCopyAll">Copy all</button><button class="btn g" id="errClear">Clear all</button><button class="btn" id="errsDone">Done</button></div>
+</div>
+<div id="toast" role="status"></div>
 <div class="veil" id="veil"></div>
 <aside id="drawer">
   <h3>Conversations</h3>
@@ -156,7 +189,11 @@ progress{width:100%;height:6px;margin-top:8px;display:none}
   <div class="row"><div>Sounds and vibration<small>Soft tones when listening starts and stops.</small></div><button class="sw" id="tSfx" role="switch"></button></div>
   <div class="row"><div>Hands-free<small>Listen again right after she finishes. Use headphones.</small></div><button class="sw" id="tHands" role="switch"></button></div>
   <div class="row"><div>Delete all conversations</div><button class="btn g" id="wipe">Delete</button></div>
-  <div class="row"><div>Which model?<small>Android needs a compatible .litertlm file; the web version .task file is not interchangeable. Gemma 4 E4B (3.6 GB): phones with 6 GB+ RAM. Gemma 4 E2B (2.6 GB): phones with 4 GB RAM, lighter and faster.</small></div></div>
+  <div class="row"><div>Your name<small>The AI will call you by it.</small></div><input class="txt" id="nameIn" maxlength="24" placeholder="Wendel" autocomplete="off"></div>
+  <div class="row"><div>Portuguese subtitles<small>Shown under the English. Never spoken.</small></div><button class="sw" id="tPt" role="switch"></button></div>
+  <div class="row"><div>Plugins<small>Claude · ChatGPT · GitHub</small></div><button class="btn g" id="openPlug">Open</button></div>
+  <div class="row"><div>Error log<small id="errCount">None</small></div><button class="btn g" id="openErrs">Open</button></div>
+  <div class="row"><div>Which model?<small>Gemma 4 E4B (3.6 GB): phones with 6 GB+ RAM. Gemma 4 E2B (2.6 GB): phones with 4 GB RAM, lighter and faster.</small></div></div>
   <div class="row" style="border:0;padding-bottom:0"><small id="ver" style="color:var(--mute);font-size:11px"></small></div>
   <div class="row" style="border:0"><button class="btn" id="closeSheet" style="width:100%">Done</button></div>
 </div>
@@ -169,7 +206,7 @@ progress{width:100%;height:6px;margin-top:8px;display:none}
 <script>
 const $=id=>document.getElementById(id),esc=s=>s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const ld=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch(e){return d}},sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
-let S=Object.assign({speak:true,caps:true,hands:false,sfx:true,rate:1,voice:''},ld('echo.set',{}));
+let S=Object.assign({speak:true,caps:true,hands:false,sfx:true,pt:true,name:'',rate:1,voice:''},ld('echo.set',{}));
 let chats=ld('echo.chats',[]),curId=ld('echo.cur',null),muted=false;
 const persist=()=>{sv('echo.chats',chats);sv('echo.cur',curId)};
 const cur=()=>{let c=chats.find(x=>x.id===curId);if(!c){c={id:''+Date.now(),title:'New conversation',msgs:[]};chats.unshift(c);curId=c.id;persist()}return c};
@@ -177,9 +214,9 @@ const cur=()=>{let c=chats.find(x=>x.id===curId);if(!c){c={id:''+Date.now(),titl
 /* ================= ORB ================= */
 const mm=matchMedia('(prefers-reduced-motion:reduce)').matches;
 function makeOrb(cv,S){
-  const c=cv.getContext('2d'),d=Math.min(devicePixelRatio||1,2);
+  const c=cv.getContext('2d'),d=Math.min(devicePixelRatio||1,1.5);
   cv.width=cv.height=S*d;cv.style.width=cv.style.height=S+'px';c.setTransform(d,0,0,d,0,0);
-  const big=S>200,N=big?900:380,P=[];
+  const big=S>200,N=big?700:300,P=[];
   for(let i=0;i<N;i++){const y=1-2*(i+.5)/N,r=Math.sqrt(1-y*y),a=i*2.39996;P.push([Math.cos(a)*r,y,Math.sin(a)*r])}
   const B=big?120:0,seed=[...Array(B)].map(()=>Math.random()*6.28),o={target:0,lv:0};
   o.draw=function(ts){
@@ -203,12 +240,15 @@ function makeOrb(cv,S){
   };return o;
 }
 const bigO=makeOrb($('orb'),Math.min(300,innerWidth*.8,innerHeight*.38)|0),smallO=makeOrb($('orbS'),150);
+const NB=window.NativeBridge||null;let extLevel=0,orbPulse=0;
 (function loop(ts){
-  if(document.hidden){requestAnimationFrame(loop);return}
+  requestAnimationFrame(loop);try{
+  if(document.hidden)return;
   if($('welcome').classList.contains('on'))smallO.draw(ts);
-  if($('voice').classList.contains('on')){bigO.target=level(ts/1000);bigO.draw(ts)}
-  requestAnimationFrame(loop)})(0);
+  if($('voice').classList.contains('on')){bigO.target=Math.max(level(ts/1000),orbPulse*.75);orbPulse*=.9;bigO.draw(ts)}
+  }catch(e){}})(0);
 
+$('orb').addEventListener('pointerdown',()=>{orbPulse=1;if(typeof buzz==='function')buzz(8)});
 /* ================= MIC LEVEL ================= */
 let an=null,abuf=null,mstream=null;
 async function startMeter(){
@@ -217,9 +257,9 @@ async function startMeter(){
     an=ac.createAnalyser();an.fftSize=256;ac.createMediaStreamSource(mstream).connect(an);abuf=new Uint8Array(an.frequencyBinCount)}catch(e){an=null}
 }
 function level(t){
-  if(state==='listening'){if(an){an.getByteFrequencyData(abuf);let s=0;for(const v of abuf)s+=v;return Math.min(1,s/abuf.length/90)}return window.NativeBridge ? nativeMicLevel : .12+.3*Math.abs(Math.sin(t*3.1)*Math.sin(t*.9))}
+  if(state==='listening'){if(an){an.getByteFrequencyData(abuf);let s=0;for(const v of abuf)s+=v;return Math.min(1,s/abuf.length/90)}return window.NativeBridge ? (extLevel*=.95,Math.max(extLevel,.09+.05*Math.sin(t*3))) : .12+.3*Math.abs(Math.sin(t*3.1)*Math.sin(t*.9))}
   if(state==='speaking')return .3+.4*Math.abs(Math.sin(t*8.3)*Math.sin(t*2.7))+Math.random()*.1;
-  if(state==='thinking')return .08+.06*Math.sin(t*4);return .03;
+  if(state==='thinking')return .08+.06*Math.sin(t*4);return .05+.03*Math.sin(t*1.6);
 }
 
 /* ================= STATE / UI ================= */
@@ -257,7 +297,8 @@ const shouldSpeak=()=>!muted&&($('voice').classList.contains('on')||S.speak);
 function replay(t){stopAll();t.match(/[^.!?]+[.!?]*\s*/g)?.forEach(enqueue)}
 
 /* ================= BRAIN (Gemma on-device via MediaPipe) ================= */
-const SYS='You are the English Ai tutor, a warm American English conversation partner for a learner. Speak natural American English in 1 to 3 short sentences, then ask one follow-up question. If the learner makes a grammar or word-choice mistake, briefly give the corrected sentence first. Never use markdown, lists or emojis.';
+const SYS_BASE='You are the English Ai tutor, a warm American English conversation partner for a learner. Reply in 1 or 2 short, natural sentences (under 35 words), then ask one short follow-up question. If the learner makes a grammar or word-choice mistake, give the corrected sentence first. Never use markdown, lists or emojis.';
+function sysPrompt(){let x=SYS_BASE;if(S.name)x+=` The learner's name is ${S.name}; use it only once in a while.`;if(S.pt)x+=' OUTPUT FORMAT: first the English reply, then a new line containing only ===, then the Brazilian Portuguese translation of that same reply.';return x}
 const VERS=['0.10.27'];
 const Brain={llm:null,last:null,
   async load(){
@@ -276,7 +317,7 @@ const Brain={llm:null,last:null,
   async reply(msgs,on,alive){
     if(!this.llm){const t=demo(msgs.at(-1).t);for(const w of t.split(/(?<=\s)/)){if(!alive())return;on(w);await sleep(60)}return}
     let turns=msgs.slice(-10);while(turns.length&&turns[0].r!=='me')turns.shift();
-    let p='<|turn>system\n'+SYS+'<turn|>\n';turns.forEach(m=>{p+='<|turn>'+(m.r==='me'?'user':'model')+'\n'+m.t+'<turn|>\n'});p+='<|turn>model\n';
+    let p='<|turn>system\n'+sysPrompt()+'<turn|>\n';turns.forEach(m=>{p+='<|turn>'+(m.r==='me'?'user':'model')+'\n'+m.t+'<turn|>\n'});p+='<|turn>model\n';
     if(this.last)await this.last.catch(()=>{});
     try{this.last=this.llm.generateResponse(p,part=>{if(alive())on(part)});await this.last}catch(e){}
   }};
@@ -291,21 +332,30 @@ function setStatus(t,ok){$('status').textContent=t;$('status').classList.toggle(
 async function ask(text){
   text=text.trim();if(!text)return;stopAll();
   const c=cur(),my=++gen;c.msgs.push({r:'me',t:text});if(c.title==='New conversation')c.title=text.slice(0,40);
-  const ai={r:'ai',t:''},hist=c.msgs.filter(m=>m.t);c.msgs.push(ai);persist();
+  const ai={r:'ai',t:'',pt:''},hist=c.msgs.filter(m=>m.t);c.msgs.push(ai);persist();
   const e=$('msgs').querySelector('.empty');e&&e.remove();$('ctitle').textContent=c.title;
-  bubble('me',text);const bub=bubble('ai','');busy=true;setState('thinking');cap('');
-  let buf='';const alive=()=>my===gen,speak=shouldSpeak();
-  const flush=end=>{if(!speak)return;let m;while((m=/^([\s\S]*?[.!?…]["”)]?)(\s+|$)/.exec(buf))&&(end||m[0].length<buf.length)){enqueue(m[1]);buf=buf.slice(m[0].length)}if(end&&buf.trim()){enqueue(buf);buf=''}};
-  await Brain.reply(hist,p=>{ai.t+=p;buf+=p;bub.firstChild.textContent=ai.t;$('msgs').scrollTop=1e9;
-    if(!speak){state!=='speaking'&&setState('speaking');cap(esc(ai.t.slice(-170)))}flush(false)},alive);
+  bubble('me',text);const bub=bubble('ai','','');busy=true;setState('thinking');cap('');$('capPt').textContent='';
+  let buf='',raw='',fed=0,first=true;const alive=()=>my===gen,speak=shouldSpeak();
+  const flush=end=>{if(!speak)return;let m;
+    for(;;){m=/^([\s\S]*?[.!?…]["”)]?)(\s+|$)/.exec(buf);
+      if(!(m&&(end||m[0].length<buf.length))){m=null;if(first&&!end&&buf.length>=28)m=/^([\s\S]{16,}?[,;:—–])\s+/.exec(buf);if(!m)break}
+      enqueue(m[1]);first=false;buf=buf.slice(m[0].length)}
+    if(end&&buf.trim()){enqueue(buf);buf=''}};
+  try{
+    await Brain.reply(hist,p=>{raw+=p;const sp=splitPt(raw);buf+=sp.en.slice(fed);fed=sp.en.length;ai.t=sp.en.trim();ai.pt=S.pt?sp.pt:'';
+      bub.firstChild.textContent=ai.t;if(ai.pt){bub.querySelector('.pt').textContent=ai.pt;$('capPt').textContent=ai.pt}
+      $('msgs').scrollTop=1e9;
+      if(!speak){state!=='speaking'&&setState('speaking');cap(esc(ai.t.slice(-170)))}flush(false)},alive);
+  }catch(err){busy=false;if(alive())setState('idle');logErr('model',(err&&err.message)||err);persist();return}
   persist();if(!alive())return;
   flush(true);busy=false;if(!talking&&!q.length)idleAfter();
 }
-function bubble(r,t){const d=document.createElement('div');d.className='b '+r;d.innerHTML='<span></span>'+(r==='ai'?'<button class="rp" aria-label="Play">▶</button>':'');
-  d.firstChild.textContent=t;if(r==='ai')d.querySelector('.rp').onclick=()=>replay(d.firstChild.textContent);$('msgs').appendChild(d);$('msgs').scrollTop=1e9;return d}
+function splitPt(raw){const i=raw.indexOf('===');if(i>=0)return{en:raw.slice(0,i),pt:raw.slice(i).replace(/^=+\s*/,'').trim()};const m=/=+$/.exec(raw);return{en:m?raw.slice(0,m.index):raw,pt:''}}
+function bubble(r,t,pt){const d=document.createElement('div');d.className='b '+r;d.innerHTML='<span></span>'+(r==='ai'?'<button class="rp" aria-label="Play">▶</button><div class="pt"></div>':'');
+  d.firstChild.textContent=t;if(r==='ai'){d.querySelector('.rp').onclick=()=>replay(d.firstChild.textContent);d.querySelector('.pt').textContent=(S.pt&&pt)||''}$('msgs').appendChild(d);$('msgs').scrollTop=1e9;return d}
 function render(){const c=cur();$('ctitle').textContent=c.title;const m=$('msgs');m.innerHTML='';
   if(!c.msgs.length)m.innerHTML='<div class="empty"><img class="logo" src="icon-192.png" alt=""><div class="hey">Hey there!</div><p>Practice English by voice or text. Everything stays on your phone.</p></div>';
-  else c.msgs.forEach(x=>x.t&&bubble(x.r,x.t))}
+  else c.msgs.forEach(x=>x.t&&bubble(x.r,x.t,x.pt))}
 
 /* ================= SPEECH IN ================= */
 let rec=null,heard='';
@@ -328,7 +378,7 @@ $('cStop').onclick=stopAll;
 /* ================= NAV / PANELS ================= */
 function go(id){document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('on',s.id===id));sv('echo.screen',id)}
 const panel=(id,on)=>{$(id).classList.toggle('on',on);$('veil').classList.toggle('on',on);if(on&&id==='drawer')list()};
-const closeAll=()=>{$('drawer').classList.remove('on');$('sheet').classList.remove('on');$('veil').classList.remove('on')};
+const closeAll=()=>{$('drawer').classList.remove('on');$('sheet').classList.remove('on');$('plug').classList.remove('on');$('errs').classList.remove('on');$('veil').classList.remove('on')};
 $('veil').onclick=closeAll;$('closeSheet').onclick=closeAll;
 ['vMenu','cMenu'].forEach(i=>$(i).onclick=()=>panel('drawer',true));
 ['vGear','cGear','status'].forEach(i=>$(i).onclick=()=>panel('sheet',true));
@@ -373,6 +423,7 @@ $('wipe').onclick=()=>{if(confirm('Delete all conversations?')){chats=[];curId=n
 
 /* Native Android adapter: keep the approved UI; replace browser-only capabilities. */
 if (window.NativeBridge) {
+  try{ $('ver').textContent='English Ai '+NativeBridge.getInfo(); }catch(e){}
   let nativeTokenHandler=null, nativeDone=null, nativeSpeakingId='', nativeListening=false, nativeMicLevel=0;
   window.Native = window.Native || {};
   window.Native.onModelStatus = (ok,label,msg) => { setStatus(label || (ok?'Gemma ready · offline':'Demo mode'),!!ok); $('prog').style.display='none'; if(msg) $('mstat').textContent=msg; };
@@ -380,23 +431,23 @@ if (window.NativeBridge) {
   window.Native.onToken = piece => { if(nativeTokenHandler) nativeTokenHandler(piece); };
   window.Native.onGenDone = () => { const done=nativeDone; nativeDone=null; nativeTokenHandler=null; if(done)done(); };
   window.Native.onGenError = msg => { const done=nativeDone; nativeDone=null; nativeTokenHandler=null; cap(esc(msg||'Generation failed')); setState('idle'); if(done)done(msg||'Generation failed'); };
-  window.Native.onTtsRange = (id,idx) => { if(id===nativeSpeakingId) showCap(nativeSpeakingText,idx); };
+  window.Native.onTtsRange = (id,idx) => { if(id===nativeSpeakingId){ showCap(nativeSpeakingText,idx); orbPulse=Math.max(orbPulse,.55); } };
   window.Native.onTtsDone = id => { if(id!==nativeSpeakingId)return; talking=false; if(q.length)pump(); else if(!busy)idleAfter(); };
   window.Native.onSpeechReady = () => { if(state==='listening') cap('<span class="you">Listening now — speak in English…</span>'); };
-  window.Native.onSpeechStarted = () => { if(state==='listening'&&!heard) cap('<span class="you">I hear you — keep speaking…</span>'); };
-  window.Native.onSpeechPartial = text => { heard=text||''; cap('<span class="you">'+esc(heard)+'</span>'); };
+  window.Native.onSpeechStarted = () => { extLevel=Math.max(extLevel,.5); if(state==='listening'&&!heard) cap('<span class="you">I hear you — keep speaking…</span>'); };
+  window.Native.onSpeechPartial = text => { extLevel=Math.max(extLevel,.6); heard=text||''; cap('<span class="you">'+esc(heard)+'</span>'); };
   window.Native.onSpeechEnd = text => { nativeListening=false; rec=null; if(state==='listening' && (text||heard).trim()) ask((text||heard).trim()); else if(state==='listening')setState('idle'); };
   window.Native.onSpeechError = msg => { nativeListening=false; rec=null; if(state==='listening'){cap(esc(msg||'Speech recognition is unavailable. Type in chat.'));setState('idle');} };
-  window.Native.onLevel = value => { nativeMicLevel=Math.max(0,Math.min(1,Number(value)||0)); };
+  window.Native.onLevel = value => { nativeMicLevel=Math.max(0,Math.min(1,Number(value)||0)); extLevel=Math.max(extLevel,Math.min(1,nativeMicLevel*1.7)); };
   window.Native.onVoices = json => { try { const a=JSON.parse(json||'[]'),s=$('voiceSel'); s.innerHTML='<option value="">System default (US)</option>'+a.map(v=>'<option value="'+esc(v.name)+'">'+esc(v.name)+' ('+esc(v.lang)+')</option>').join(''); s.value=S.voice||''; } catch(e){} };
-  window.Native.onBack = () => { if($('sheet').classList.contains('on')||$('drawer').classList.contains('on')){closeAll();return true;} if($('chat').classList.contains('on')){go('voice');return true;} return false; };
+  window.Native.onBack = () => { if(['sheet','drawer','plug','errs'].some(i=>$(i).classList.contains('on'))){closeAll();return true;} if($('chat').classList.contains('on')){go('voice');return true;} return false; };
   Brain.load = () => NativeBridge.loadModel();
   Brain.cancel = () => NativeBridge.cancelGenerate();
   Brain.reply = (msgs,on,alive) => new Promise((resolve,reject)=>{
     nativeTokenHandler = piece => { if(alive())on(piece); };
     nativeDone = err => err ? reject(err) : resolve();
     const history=msgs.slice(-12).map(m=>({role:m.r==='me'?'user':'model',content:m.t}));
-    NativeBridge.generate(JSON.stringify({system:SYS,chat:curId,count:msgs.length,messages:history}));
+    NativeBridge.generate(JSON.stringify({system:sysPrompt(),chat:curId,count:msgs.length,messages:history}));
   });
   pump = function(){ if(talking||!q.length)return; const s=q.shift(); talking=true; nativeSpeakingText=s; nativeSpeakingId=String(Date.now())+String(Math.random()); setState('speaking'); showCap(s,-1); NativeBridge.speak(nativeSpeakingId,s,String(S.rate),String(S.voice||'')); };
   stopAll = function(){ gen++; q=[]; talking=false; busy=false; NativeBridge.cancelGenerate(); NativeBridge.stopSpeaking(); if(nativeListening)NativeBridge.cancelListening(); nativeListening=false; rec=null; persist(); setState('idle'); };
@@ -407,10 +458,66 @@ if (window.NativeBridge) {
   $('rmModel').onclick=()=>{ if(confirm('Remove the model stored on this phone?'))NativeBridge.removeModel(); };
   $('voiceSel').onfocus=()=>NativeBridge.getVoices();
   $('mute').onclick=()=>{ muted=!muted; $('mute').style.opacity=muted?.4:1; if(muted){q=[];NativeBridge.stopSpeaking();talking=false;} };
-  try{ $('ver').textContent='English Ai '+NativeBridge.getInfo(); }catch(e){}
   NativeBridge.getVoices();
   $('voiceSel').onchange=e=>{ S.voice=e.target.value; sv('echo.set',S); };
 }
+/* ================= ERROR LOG · PLUGINS · REPORTING ================= */
+function toast(t){const e=$('toast');e.textContent=t;e.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('on'),2800)}
+let errs=ld('echo.errors',[]);
+const saveErrs=()=>sv('echo.errors',errs.slice(0,50));
+function ctxInfo(){let v='web';try{if(NB)v=NativeBridge.getInfo()}catch(e){}return v+' | screen='+ld('echo.screen','?')+' | state='+state+' | model='+$('status').textContent+' | online='+navigator.onLine}
+function logErr(src,msg,stack){msg=String(msg==null?'':msg).slice(0,1500);if(!msg)return;const l=errs[0];if(l&&l.msg===msg&&Date.now()-l.ts<5000)return;
+  errs.unshift({id:Date.now()+Math.random().toString(36).slice(2,6),ts:Date.now(),src,msg,stack:String(stack||'').slice(0,1200),ctx:ctxInfo(),isNew:true});errs=errs.slice(0,50);saveErrs();refreshErrUI()}
+addEventListener('error',e=>logErr('js',e.message,(e.error&&e.error.stack)||(e.filename+':'+e.lineno)));
+addEventListener('unhandledrejection',e=>logErr('js-promise',(e.reason&&e.reason.message)||e.reason,e.reason&&e.reason.stack));
+const report=e=>'English Ai error report\nTime: '+new Date(e.ts).toLocaleString()+'\nSource: '+e.src+'\nContext: '+e.ctx+'\n\nMessage:\n'+e.msg+(e.stack?'\n\nStack:\n'+e.stack:'');
+function copyOut(text,msg){let ok=false;try{if(NB){NativeBridge.copyText(text);ok=true}}catch(e){}if(!ok&&navigator.clipboard)navigator.clipboard.writeText(text).catch(()=>{});toast(msg||'Copied')}
+function openUrl(u){try{if(NB){NativeBridge.openUrl(u);return}}catch(e){}window.open(u,'_blank')}
+function sendTo(k,e){const nm=k==='claude'?'Claude':'ChatGPT',url=k==='claude'?'https://claude.ai/new':'https://chatgpt.com/';
+  copyOut('Hi! My Android app "English Ai" (offline Gemma 4 English tutor) logged this error. Explain the cause and give me the exact fix.\n\n'+report(e),'Copied. Paste it in '+nm);setTimeout(()=>openUrl(url),700)}
+async function sendGh(e){const g=ld('echo.gh',null);if(!g)return;toast('Sending to GitHub…');
+  try{const r=await fetch('https://api.github.com/repos/'+g.repo+'/issues',{method:'POST',headers:{Authorization:'Bearer '+g.token,Accept:'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({title:'[English Ai] '+e.msg.slice(0,70),body:'```\n'+report(e)+'\n```',labels:['english-ai-bug']})});
+    if(!r.ok)throw new Error('GitHub answered '+r.status);const j=await r.json();copyOut(j.html_url,'Issue created. Link copied.')}catch(x){toast(x.message||'GitHub failed')}}
+function refreshErrUI(){const n=errs.length,nw=errs.filter(e=>e.isNew).length;$('errCount').textContent=n?n+' saved':'None';
+  const b=$('errBanner');b.style.display=(nw&&navigator.onLine)?'flex':'none';b.querySelector('span').textContent=nw+(nw>1?' errors':' error')+' saved · review';
+  if($('errs').classList.contains('on'))renderErrs()}
+function renderErrs(){const L=$('errList'),on=navigator.onLine,gh=ld('echo.gh',null);L.innerHTML='';
+  $('errNote').textContent=on?'You are online: you can send errors to Claude, ChatGPT or GitHub.':'You are offline: copy now and send later. Errors stay saved.';
+  if(!errs.length){L.innerHTML='<p class="empty2">No errors saved. 🎉</p>';return}
+  errs.forEach(e=>{const d=document.createElement('div');d.className='eit';d.innerHTML='<div class="eh"><b></b><small></small></div><pre></pre><div class="eb"></div>';
+    d.querySelector('b').textContent=e.src;d.querySelector('small').textContent=new Date(e.ts).toLocaleString();d.querySelector('pre').textContent=e.msg;
+    const B=d.querySelector('.eb'),add=(t,fn,cls,dis)=>{const b=document.createElement('button');b.textContent=t;if(cls)b.className=cls;if(dis)b.disabled=true;b.onclick=fn;B.appendChild(b)};
+    add('Copy',()=>copyOut(report(e)));add('Claude',()=>sendTo('claude',e),'',!on);add('ChatGPT',()=>sendTo('chatgpt',e),'',!on);
+    if(gh)add('GitHub',()=>sendGh(e),'',!on);
+    add('Ignore',()=>{errs=errs.filter(x=>x!==e);saveErrs();refreshErrUI();renderErrs()},'g');L.appendChild(d)})}
+addEventListener('online',refreshErrUI);addEventListener('offline',refreshErrUI);
+$('openErrs').onclick=()=>{closeAll();errs.forEach(e=>e.isNew=false);saveErrs();panel('errs',true);renderErrs();refreshErrUI()};
+$('errBanner').onclick=$('openErrs').onclick;$('errsDone').onclick=closeAll;
+$('errCopyAll').onclick=()=>copyOut(errs.map(report).join('\n\n----------\n\n')||'No errors');
+$('errClear').onclick=()=>{errs=[];saveErrs();refreshErrUI();renderErrs()};
+/* plugins */
+function ghUI(){const g=ld('echo.gh',null);$('ghStat').textContent=g?('Connected as '+g.user+' · '+g.repo):'Not connected.';$('ghOff').style.display=g?'':'none';$('ghConn').textContent=g?'Reconnect':'Connect'}
+$('openPlug').onclick=()=>{closeAll();ghUI();panel('plug',true)};$('plugDone').onclick=closeAll;
+$('ghHelp').onclick=()=>openUrl('https://github.com/settings/personal-access-tokens/new');
+$('ghConn').onclick=async()=>{const repo=$('ghRepo').value.trim(),token=$('ghTok').value.trim();
+  if(!/^[\w.-]+\/[\w.-]+$/.test(repo))return toast('Use the format owner/repository');if(!token)return toast('Paste your token');if(!navigator.onLine)return toast('Go online to connect GitHub');
+  try{const h={Authorization:'Bearer '+token,Accept:'application/vnd.github+json'};
+    const u=await fetch('https://api.github.com/user',{headers:h});if(!u.ok)throw new Error('Token rejected ('+u.status+')');
+    const r=await fetch('https://api.github.com/repos/'+repo,{headers:h});if(!r.ok)throw new Error('Repository not found or no access ('+r.status+')');
+    sv('echo.gh',{token,repo,user:(await u.json()).login});$('ghTok').value='';ghUI();toast('GitHub connected')}catch(e){toast(e.message||'Could not connect')}};
+$('ghOff').onclick=()=>{try{localStorage.removeItem('echo.gh')}catch(e){}ghUI();toast('GitHub disconnected')};
+/* settings: name + Portuguese subtitles */
+$('nameIn').value=S.name||'';$('nameIn').oninput=e=>{S.name=e.target.value.trim().slice(0,24);sv('echo.set',S)};
+tg('tPt','pt');$('tPt').addEventListener('click',()=>{if(!S.pt)$('capPt').textContent=''});
+/* hook native errors into the log */
+if(NB){
+  const wrap=(k,fn)=>{const o=Native[k];Native[k]=function(){try{fn.apply(null,arguments)}catch(e){}return o&&o.apply(this,arguments)}};
+  wrap('onGenError',m=>logErr('model',m));wrap('onSpeechError',m=>logErr('speech',m));
+  wrap('onModelStatus',(ok,label,msg)=>{if(!ok&&/error|could not|too large|failed|not enough/i.test((label||'')+' '+(msg||'')))logErr('model-load',(label||'')+': '+(msg||''))});
+  try{const c=NativeBridge.getLastCrash();if(c)logErr('previous-run',c)}catch(e){}
+}
+refreshErrUI();ghUI();
+
 /* ================= START ================= */
 (function(){const sl=$('slide'),k=$('knob');let down=false,x0=0,max=0;const pos=x=>k.style.transform=`translateX(${x}px)`;
   sl.onpointerdown=e=>{down=true;x0=e.clientX;max=sl.clientWidth-54;sl.setPointerCapture(e.pointerId)};

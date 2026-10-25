@@ -2,10 +2,12 @@ name: Build English Ai native Android
 on:
   workflow_dispatch:
   push:
-    branches: [native-android-offline]
+    branches: [native-android-offline, native-android-1.3-claude-fixes]
     paths:
       - 'android-native/**'
       - 'index.html'
+      - 'manifest.json'
+      - 'tools/**'
       - 'icon-192.png'
       - 'icon-512.png'
       - 'icon-maskable-512.png'
@@ -35,38 +37,35 @@ jobs:
         run: |
           mkdir -p android-native/app/src/main/assets/www
           cp icon-192.png icon-512.png icon-maskable-512.png android-native/app/src/main/assets/www/
+          cp manifest.json android-native/app/src/main/assets/www/manifest.json
           mkdir -p android-native/app/src/main/res/drawable-nodpi
           cp icon-512.png android-native/app/src/main/res/drawable-nodpi/ic_launcher.png
-      - name: Verify native integration contract
+      - name: Guard - fixes present
         run: |
-          HTML=android-native/app/src/main/assets/www/index.html
-          BRIDGE=android-native/app/src/main/java/com/englishai/app/NativeBridge.kt
-          ENGINE=android-native/app/src/main/java/com/englishai/app/LiteRtEngine.kt
-          grep -q 'chat:curId,count:msgs.length' "$HTML"
-          grep -q 'engine.generate(root.optString("chat"), root.optInt("count"' "$BRIDGE"
-          grep -q 'engine.load(modelFile.absolutePath, totalRam())' "$BRIDGE"
-          grep -q 'fun load(path: String, totalRamBytes: Long)' "$ENGINE"
-          grep -q 'maxNumTokens = tokens' "$ENGINE"
-          grep -q 'trimConversation()' "$ENGINE"
-          if grep -rnE 'estimated minimum|requiredHeadroom|availMem' android-native/app/src; then
-            echo 'Obsolete free-RAM guard detected; review the memory strategy.'
-            exit 1
-          fi
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          html = Path('android-native/app/src/main/assets/www/index.html').read_text(encoding='utf-8')
-          scripts = re.findall(r'<script(?:\s[^>]*)?>([\s\S]*?)</script>', html, re.IGNORECASE)
-          if len(scripts) != 1:
-              raise SystemExit(f'Expected one inline application script, found {len(scripts)}')
-          Path('/tmp/english-ai-inline.js').write_text(scripts[0], encoding='utf-8')
-          PY
-          node --check /tmp/english-ai-inline.js
-
+          if grep -rnE "estimated minimum|requiredHeadroom|availMem" android-native/app/src; then echo "OLD memory check still present"; exit 1; fi
+          grep -q "maxNumTokens" android-native/app/src/main/java/com/englishai/app/LiteRtEngine.kt
+          grep -q "getInfo" android-native/app/src/main/java/com/englishai/app/NativeBridge.kt
+          grep -q "getLastCrash" android-native/app/src/main/java/com/englishai/app/NativeBridge.kt
+          grep -q "extLevel" android-native/app/src/main/assets/www/index.html
+      - name: Static checks (tools/static_check.py)
+        run: python3 tools/static_check.py
       - name: Compile debug APK
         working-directory: android-native
-        run: gradle assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          gradle assembleDebug --stacktrace 2>&1 | tee ../build.log
+      - name: Verify the APK really has version 1.3 / code 4
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging android-native/app/build/outputs/apk/debug/app-debug.apk | head -1 | tee apk-version.txt
+          grep -q "versionCode='4' versionName='1.3'" apk-version.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-log
+          path: |
+            build.log
+            apk-version.txt
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: English-Ai-Native-debug-apk
@@ -74,7 +73,7 @@ jobs:
           if-no-files-found: error
       - name: Package editable source for external review
         run: |
-          zip -r English-Ai-Source-Claude.zip . -x ".git/*" "android-native/app/build/*" "android-native/build/*" "android-native/.gradle/*" "android-twa/app/build/*" "android-twa/build/*" "android-twa/.gradle/*" ".gradle/*" "English-Ai-Source-Claude.zip"
+          zip -r English-Ai-Source-Claude.zip . -x ".git/*" "android-native/app/build/*" ".gradle/*"
       - uses: actions/upload-artifact@v4
         with:
           name: English-Ai-Source-Claude

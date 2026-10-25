@@ -21,11 +21,19 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val prevHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try { java.io.File(filesDir, "last_crash.txt").writeText(java.util.Date().toString() + "\n" + e.stackTraceToString().take(4000)) } catch (_: Throwable) {}
+            prevHandler?.uncaughtException(t, e)
+        }
         web = WebView(this)
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
         web.settings.allowFileAccess = false
         web.settings.allowContentAccess = false
+        web.settings.setSupportZoom(false)
+        web.setBackgroundColor(android.graphics.Color.BLACK)
+        web.overScrollMode = android.view.View.OVER_SCROLL_NEVER
         web.webChromeClient = WebChromeClient()
         val loader = WebViewAssetLoader.Builder().addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this)).build()
         web.webViewClient = object : WebViewClient() {
@@ -47,11 +55,11 @@ class MainActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) bridge.startListeningGranted()
         else micPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
-    override fun onBackPressed() { web.evaluateJavascript("window.Native && window.Native.onBack ? window.Native.onBack() : false") { handled -> if (handled != "true") finish() } }
     private val idle = android.os.Handler(android.os.Looper.getMainLooper())
     private val unloadTask = Runnable { if (::bridge.isInitialized) bridge.unloadForBackground() }
-    override fun onStop() { super.onStop(); idle.postDelayed(unloadTask, 3 * 60 * 1000L) }
+    override fun onStop() { super.onStop(); idle.postDelayed(unloadTask, 3 * 60 * 1000L) }   // free RAM after 3 min in background
     override fun onStart() { super.onStart(); idle.removeCallbacks(unloadTask); if (::bridge.isInitialized) bridge.reloadIfUnloaded() }
     override fun onTrimMemory(level: Int) { super.onTrimMemory(level); if (level >= 15 && ::bridge.isInitialized) bridge.trimMemory() }
-    override fun onDestroy() { idle.removeCallbacks(unloadTask); if (::bridge.isInitialized) bridge.close(); if (::web.isInitialized) web.destroy(); super.onDestroy() }
+    override fun onBackPressed() { web.evaluateJavascript("window.Native && window.Native.onBack ? window.Native.onBack() : false") { handled -> if (handled != "true") finish() } }
+    override fun onDestroy() { if (::bridge.isInitialized) bridge.close(); if (::web.isInitialized) web.destroy(); super.onDestroy() }
 }
