@@ -152,7 +152,8 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     /** Speak the personalized greeting only inside a configured morning/evening window. */
     @JavascriptInterface fun triggerGreeting() {
         if (!userSettings.isWithinActiveRoutine()) return
-        val greeting = EnglishTtsManager.greeting(userSettings.userName())
+        val hour = java.time.LocalTime.now().hour
+        val greeting = EnglishTtsManager.greeting(userSettings.userName(), hour < 12)
         main.post {
             try {
                 tts?.setLanguage(Locale.US)
