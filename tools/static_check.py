@@ -20,6 +20,7 @@ chk('engine: maxNumTokens + cache + reuse','maxNumTokens' in en and 'litert-cach
 chk('engine lifecycle: assign only after initialize; do not close failed candidate', 'candidate.initialize()\n        engine = candidate' in en and 'candidate.close()' not in en)
 chk('background unload is guarded by foreground lifecycle state','private val lifecycleLock = Any()' in nb and 'if (!foreground && modelFile.exists()' in nb and 'fun setForeground(isForeground: Boolean)' in nb)
 chk('model resume is queued off the Android main thread','foreground = isForeground' in nb and 'if (isForeground) worker.execute' in nb)
+chk('resume during engine shutdown schedules a second recovery check','// The user may have returned while engine.close() was running.' in nb and 'if (foreground) {' in nb and nb.index('if (foreground) {') > nb.index('fun unloadForBackground()'))
 chk('activity updates bridge foreground state on start/stop','bridge.setForeground(false)' in ma and 'bridge.setForeground(true)' in ma and 'bridge.reloadIfUnloaded()' not in ma)
 chk('bridge: getInfo/getLastCrash/copyText/openUrl',all(x in nb for x in ['fun getInfo','fun getLastCrash','fun copyText','fun openUrl']))
 chk('bridge: on-device Portuguese translation',all(x in nb for x in ['fun ptEnsure','fun translate']))
