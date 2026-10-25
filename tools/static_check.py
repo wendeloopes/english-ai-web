@@ -47,6 +47,11 @@ assert.strictEqual(speechText('English AI: How are you?'), 'How are you?');
 assert.strictEqual(speechText('Assistant: I am fine.'), 'I am fine.');
 assert.strictEqual(speechText('<b>Hello</b> *there*!'), 'Hello there!');
 assert.strictEqual(speechText('   '), '');
+assert.strictEqual(speechText('**Hello there!**'), 'Hello there!');
+assert.strictEqual(speechText('English IA: Good morning!'), 'Good morning!');
+assert.strictEqual(speechText('English response: Welcome back.'), 'Welcome back.');
+assert.strictEqual(speechText('Hello there.\n===\nOlá!'), 'Hello there.');
+assert.strictEqual(speechText('English AI:   How are you   ?'), 'How are you?');
 """
     open('/tmp/_speech_regression.js','w').write(test_js)
     speech_run=subprocess.run(['node','/tmp/_speech_regression.js'],capture_output=True,text=True)
