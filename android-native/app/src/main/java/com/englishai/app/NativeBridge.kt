@@ -162,6 +162,46 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         }
     }
 
+
+    /** Schedule/cancel the real Android alarm at 04:40. */
+    @JavascriptInterface fun setMorningAlarm(enabled: Boolean) {
+        val prefs = activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("morningAlarmEnabled", enabled).apply()
+        if (enabled) {
+            MorningAlarmReceiver.scheduleNext(activity, 4, 40)
+            call("onMorningAlarmStatus", "true", JSONObject.quote("Daily 04:40 alarm scheduled. Android may use an inexact alarm if exact-alarm access is unavailable."))
+        } else {
+            MorningAlarmReceiver.cancel(activity)
+            call("onMorningAlarmStatus", "false", JSONObject.quote("Morning alarm disabled."))
+        }
+    }
+    @JavascriptInterface fun isMorningAlarmEnabled(): Boolean =
+        activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE).getBoolean("morningAlarmEnabled", false)
+
+    /** Start hotword only from the visible app after the user explicitly enables it. */
+    @JavascriptInterface fun setHotwordEnabled(enabled: Boolean) {
+        val prefs = activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
+        if (!enabled) {
+            prefs.edit().putBoolean("hotwordEnabled", false).apply()
+            activity.stopService(Intent(activity, HotwordListeningService::class.java))
+            call("onHotwordStatus", "false", JSONObject.quote("Voice activation stopped."))
+            return
+        }
+        if (activity.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            call("onHotwordStatus", "false", JSONObject.quote("Microphone permission is required. Grant it in Android app settings, then enable voice activation again."))
+            return
+        }
+        try {
+            prefs.edit().putBoolean("hotwordEnabled", true).apply()
+            val intent = Intent(activity, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_START)
+            if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(intent) else activity.startService(intent)
+            call("onHotwordStatus", "true", JSONObject.quote("Voice activation is on. A persistent notification will remain visible while the microphone is active."))
+        } catch (e: Exception) {
+            prefs.edit().putBoolean("hotwordEnabled", false).apply()
+            call("onHotwordStatus", "false", JSONObject.quote(e.message ?: "Could not start voice activation. Keep English AI open and try again."))
+        }
+    }
+
     /** Shown in Settings so you can confirm which build is installed. */
     @JavascriptInterface fun getInfo(): String {
         val v = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName } catch (_: Exception) { "?" }
