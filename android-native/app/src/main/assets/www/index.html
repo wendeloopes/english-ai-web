@@ -109,6 +109,95 @@ progress{width:100%;height:6px;margin-top:8px;display:none}
 #toast{position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 90px);transform:translateX(-50%);background:#fff;color:#000;padding:10px 16px;border-radius:14px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .25s;z-index:40;max-width:86%;text-align:center}#toast.on{opacity:1}
 .pt{font-size:12.5px;color:var(--vio2);opacity:.9;margin-top:8px;padding-top:7px;border-top:1px dashed #ffffff22;line-height:1.4}.pt:empty{display:none}
 #capPt{width:100%;min-height:34px;padding:0 24px 10px;text-align:center;font-size:14px;line-height:1.35;color:var(--vio2);opacity:.92}
+
+/* ===== English AI deep-navy redesign ===== */
+:root{color-scheme:dark;--ink:#f3f7ff;--mute:#91a4c5;--card:#111d35;--line:#253a5d;--vio2:#76baff;--navy:#071326;--panel:#0c1a30;--accent:#3f9cff;--accent2:#245fd6}
+html,body{background:#050d1a;color:var(--ink)}
+.app{background:radial-gradient(110% 55% at 50% -10%,#173966 0%,transparent 60%),linear-gradient(180deg,#071326 0%,#050d1a 100%)}
+.screen{background:transparent}
+.top{height:56px;padding-left:18px;padding-right:18px}
+.ico{color:#b6c9e8;background:#0e203b;border:1px solid #1b3558}
+.chip2{background:#102541;color:#a7bddc;border:1px solid #244365;border-radius:18px}
+.chip2.ok{color:#8de5c0}
+#voice{padding-bottom:100px}
+#vtitle{font-size:26px;color:#edf5ff}
+.ctl{background:#122743;border:1px solid #244365;color:#c7dcf8}
+.mic{background:linear-gradient(145deg,#d9efff,#7bbcff);color:#061326;box-shadow:0 8px 28px #268fff38}
+.mic.live{box-shadow:0 0 0 8px #3f9cff24,0 0 38px #3f9cff88}
+.mic.stop{background:#ff6c82;color:#1a0710}
+#cap .h{color:#9dd4ff;background:#2d83d733}
+#capPt,.pt{color:#8ebcff}
+#chat{padding:0 16px 88px}
+#ctitle{color:#9eb4d4}
+.empty .logo{filter:drop-shadow(0 0 26px #318fff66)}
+.hey{background:linear-gradient(90deg,#f7fbff 15%,#8bc8ff 75%);-webkit-background-clip:text;background-clip:text}
+.b.me{background:linear-gradient(135deg,#237de0,#3f9cff);color:#fff}
+.b.ai{background:#10213a;border-color:#254267}
+.bar{background:#0d1d34;border-color:#244365;border-radius:24px;box-shadow:0 10px 30px #0002}
+.bar input{color:#f3f7ff}
+.rb.vm{background:#152b49;color:#a8d6ff}
+.rb.send{background:#83c5ff;color:#061326}
+.veil{background:#020817b8;backdrop-filter:blur(5px)}
+#drawer,#sheet,#plug,#errs{background:#0a172b;border-color:#203958;box-shadow:0 18px 60px #0006}
+#drawer{width:min(86%,360px);padding-left:18px;padding-right:18px}
+#drawer h3,#sheet h3,#plug h3,#errs h3{font-size:20px;letter-spacing:-.02em}
+.newc{background:linear-gradient(135deg,#83c5ff,#3d91f5);color:#061326;border-radius:14px}
+.ci{background:#10213a;border:1px solid #1e385b}
+.ci.cur{outline:1px solid #4c9fff;background:#132a49}
+#sheet{border-radius:26px 26px 0 0}
+.row{border-bottom-color:#1b3150}
+.sw.on{background:#328bea}
+.btn{background:#83c5ff;color:#061326;border-radius:13px}
+.btn.g{background:#162b48;color:#d8e9ff;border:1px solid #2a4568}
+select,input[type=range],.txt{background:#132844;color:#f3f7ff;border:1px solid #28476c}
+#plug,#errs{border-radius:26px 26px 0 0}
+.pcard,.eit{background:#10213a;border-color:#254267}
+#toast{background:#d7edff;color:#061326}
+#errBanner{background:#38251d;border-color:#754a35}
+#voice::before{border-color:#83c5ff88;box-shadow:0 0 28px #3f9cff25}
+@media(prefers-reduced-motion:reduce){.screen,#drawer,#sheet,#plug,#errs,.veil{transition:none}}
+/* Primary navigation */
+#bottomNav{position:absolute;z-index:12;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 8px);height:66px;padding:6px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;border:1px solid #203a5d;border-radius:22px;background:#09172beF;box-shadow:0 12px 35px #0005;backdrop-filter:blur(18px)}
+#bottomNav[hidden]{display:none}
+.navtab{min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border-radius:16px;color:#8198b9;font-size:10px;font-weight:600;letter-spacing:.01em}
+.navtab svg{width:20px;height:20px}
+.navtab.active{background:#17365a;color:#a7d7ff}
+.navtab.active svg{filter:drop-shadow(0 0 7px #4aa7ff44)}
+.mainpage{padding:10px 18px 96px;gap:14px;overflow-y:auto;overscroll-behavior:contain}
+.pagehead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0 6px}
+.pagehead h1{font-size:26px;letter-spacing:-.04em;font-weight:750}
+.eyebrow{font-size:11px;color:#7fbaff;font-weight:700;letter-spacing:.13em;text-transform:uppercase;margin-bottom:6px}
+.pageintro{font-size:13px;line-height:1.55;color:#9db1ce}
+.heroPanel{padding:20px;border-radius:24px;border:1px solid #28486d;background:radial-gradient(100% 100% at 100% 0%,#1d4d7b 0%,transparent 65%),linear-gradient(145deg,#102744,#0b1a30);box-shadow:0 12px 35px #0002}
+.heroPanel h2{font-size:23px;line-height:1.2;letter-spacing:-.03em;margin-bottom:8px}
+.actionline{display:flex;align-items:center;gap:10px;margin-top:16px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:99px;background:#123356;color:#a8d6ff;font-size:11px;font-weight:700}
+.sectionlabel{font-size:14px;font-weight:700;margin:5px 0 0}
+.featurelist{display:grid;gap:10px}
+.featurecard{display:flex;align-items:center;gap:13px;padding:15px;border-radius:18px;border:1px solid #1e385a;background:linear-gradient(145deg,#10213a,#0b192d);text-align:left;width:100%;min-height:78px}
+.featureicon{width:42px;height:42px;display:grid;place-items:center;flex:none;border-radius:14px;background:#17365a;color:#8ecaff}
+.featureicon svg{width:21px;height:21px}
+.featurecopy{min-width:0;flex:1}
+.featurecopy b{display:block;font-size:14px;margin-bottom:4px}
+.featurecopy small{display:block;font-size:12px;line-height:1.4;color:#91a7c8}
+.chev{font-size:20px;color:#6b8cb5}
+.lessongrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.lesson{min-height:150px;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;text-align:left;padding:15px;border-radius:20px;border:1px solid #284568;background:radial-gradient(130% 90% at 100% 0%,#1b4772 0%,transparent 75%),#0e2038}
+.lesson .featureicon{width:38px;height:38px;margin-bottom:15px}
+.lesson b{font-size:14px;line-height:1.3}
+.lesson small{font-size:11px;color:#9bb3d3;line-height:1.45;margin-top:6px}
+.formfield{width:100%;min-width:0;max-width:none!important;background:#0d1e35!important;border:1px solid #29466b!important;border-radius:13px!important;padding:13px!important;color:#eff7ff!important;font:inherit!important;font-size:14px!important}
+.vocabform{display:grid;gap:10px;padding:15px;border-radius:20px;border:1px solid #203a5d;background:#0d1d33}
+.vocabitem{padding:13px 14px;border-radius:15px;border:1px solid #203a5d;background:#10213a;display:flex;align-items:center;gap:12px}
+.vocabitem b{display:block;font-size:14px}
+.vocabitem small{display:block;color:#9ab1d2;font-size:12px;margin-top:4px}
+.vocabitem button{color:#87bfff;padding:8px}
+.emptyPage{padding:28px 18px;text-align:center;border:1px dashed #29466b;border-radius:18px;color:#91a7c8;font-size:13px;line-height:1.5}
+#savedList{display:grid;gap:9px}
+.pagefootnote{font-size:11px;line-height:1.5;color:#7189aa;padding:4px 2px}
+@media(max-height:650px){#bottomNav{height:58px}.mainpage{padding-top:5px}.heroPanel{padding:16px}.lesson{min-height:130px}}
+@media(min-width:600px){.app{border-left:1px solid #1b3453;border-right:1px solid #1b3453}#bottomNav{left:24px;right:24px}.mainpage{padding-left:24px;padding-right:24px}}
+
 </style>
 </head>
 <body>
@@ -159,6 +248,63 @@ progress{width:100%;height:6px;margin-top:8px;display:none}
     <button class="rb send" id="send" aria-label="Send"><svg class="i" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
   </div>
 </section>
+
+
+<section class="screen mainpage" id="lessons">
+  <div class="pagehead"><div><div class="eyebrow">Aprenda na prática</div><h1>Aulas</h1></div><span class="pill">100% no aparelho</span></div>
+  <div class="heroPanel"><div class="eyebrow">Sua próxima sessão</div><h2>Pequenos passos.<br>Inglês de verdade.</h2><p class="pageintro">Escolha um tema e pratique com a IA. As aulas usam a conversa local do aplicativo; não exigem serviços de IA na nuvem.</p><div class="actionline"><button class="btn" id="lessonQuick">Começar conversa</button></div></div>
+  <div class="sectionlabel">Trilhas de aprendizagem</div>
+  <div class="lessongrid">
+    <button class="lesson" data-lesson="Let's practice introducing myself in English. Ask me one simple question at a time and correct my mistakes gently."><span><span class="featureicon"> <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0116 0"/></svg></span><b>Apresentações</b><small>Fale sobre você e conheça alguém.</small></span><span class="pill">Iniciante ↗</span></button>
+    <button class="lesson" data-lesson="Let's practice ordering food at a café in the United States. You are the server. Keep it natural and help correct my English."><span><span class="featureicon"><svg class="i" viewBox="0 0 24 24"><path d="M3 10h18M5 10l1 10h12l1-10M8 10V6a4 4 0 018 0v4"/></svg></span><b>Restaurante</b><small>Peça comida e entenda respostas.</small></span><span class="pill">Cotidiano ↗</span></button>
+    <button class="lesson" data-lesson="Let's practice a job interview in English. Ask one interview question at a time, then give me a concise correction and a better natural answer."><span><span class="featureicon"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V4h8v3M3 12h18M10 12v2h4v-2"/></svg></span><b>Entrevista</b><small>Responda com mais confiança.</small></span><span class="pill">Trabalho ↗</span></button>
+    <button class="lesson" data-lesson="Help me practice American English pronunciation and listening. Use short everyday phrases, show the English sentence and then its Brazilian Portuguese translation."><span><span class="featureicon"><svg class="i" viewBox="0 0 24 24"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/></svg></span><b>Escuta e fala</b><small>Frases curtas e ritmo natural.</small></span><span class="pill">Oral ↗</span></button>
+  </div>
+  <p class="pagefootnote">As trilhas preparam uma conversa com instruções iniciais. A geração depende do modelo local instalado e carregado.</p>
+</section>
+<section class="screen mainpage" id="vocab">
+  <div class="pagehead"><div><div class="eyebrow">Seu caderno pessoal</div><h1>Vocabulário</h1></div><span class="pill" id="vocabCount">0 palavras</span></div>
+  <p class="pageintro">Guarde palavras e expressões para revisar depois. O caderno fica armazenado localmente neste aplicativo.</p>
+  <form class="vocabform" id="vocabForm">
+    <label class="eyebrow" for="vocabWord">Nova palavra ou expressão</label>
+    <input class="formfield" id="vocabWord" maxlength="90" placeholder="Ex.: figure out" required>
+    <input class="formfield" id="vocabMeaning" maxlength="180" placeholder="Significado em português (opcional)">
+    <button class="btn" type="submit">＋ Adicionar ao caderno</button>
+  </form>
+  <div class="sectionlabel">Suas palavras</div><div id="vocabList"></div>
+</section>
+<section class="screen mainpage" id="more">
+  <div class="pagehead"><div><div class="eyebrow">Personalize sua experiência</div><h1>Mais</h1></div><span class="pill">Offline first</span></div>
+  <div class="heroPanel"><div class="eyebrow">English AI</div><h2>Seu inglês.<br>Seu ritmo.</h2><p class="pageintro">Gerencie modelos, preferências e suas conversas guardadas neste aparelho.</p></div>
+  <div class="featurelist">
+    <button class="featurecard" id="openSettingsPage"><span class="featureicon"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3H14a1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8V14a1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1V7a2 2 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H10a1.7 1.7 0 001-1.5V1"/></svg></span><span class="featurecopy"><b>Configurações</b><small>Voz, legendas, rotinas e preferências.</small></span><span class="chev">›</span></button>
+    <button class="featurecard" id="openModelsPage"><span class="featureicon"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9zM9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg></span><span class="featurecopy"><b>Modelos de IA</b><small>Instale ou remova o modelo local.</small></span><span class="chev">›</span></button>
+    <button class="featurecard" id="openSavedPage"><span class="featureicon"><svg class="i" viewBox="0 0 24 24"><path d="M5 4h14v17l-7-4-7 4z"/></svg></span><span class="featurecopy"><b>Conversas salvas</b><small>Retome uma conversa guardada no aparelho.</small></span><span class="chev">›</span></button>
+    <button class="featurecard" id="openDrawerMore"><span class="featureicon"><svg class="i" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span><span class="featurecopy"><b>Menu de conversas</b><small>Crie, abra ou exclua conversas.</small></span><span class="chev">›</span></button>
+  </div>
+  <p class="pagefootnote" id="moreVersion">Seus dados de conversa e vocabulário são guardados no armazenamento local do app/WebView.</p>
+</section>
+<section class="screen mainpage" id="saved">
+  <div class="pagehead"><div><div class="eyebrow">Histórico local</div><h1>Conversas salvas</h1></div><button class="ico" id="savedBack" aria-label="Voltar">‹</button></div>
+  <p class="pageintro">Abra uma conversa anterior para continuar de onde parou. O histórico não é enviado para a nuvem por esta tela.</p>
+  <div id="savedList"></div>
+  <button class="btn" id="savedNew">＋ Nova conversa</button>
+</section>
+<section class="screen mainpage" id="models">
+  <div class="pagehead"><div><div class="eyebrow">Execução no aparelho</div><h1>Modelos de IA</h1></div><button class="ico" id="modelsBack" aria-label="Voltar">‹</button></div>
+  <div class="heroPanel"><div class="eyebrow">Estado do modelo</div><h2 id="modelsStatus">Verificando modelo…</h2><p class="pageintro" id="modelsDescription">A IA deve usar um modelo local compatível. Nenhum fallback de IA na nuvem será configurado.</p><div class="actionline"><span class="pill">Processamento local</span><span class="pill">Sem API de IA</span></div></div>
+  <div class="featurelist">
+    <button class="featurecard" id="modelsChoose"><span class="featureicon"><svg class="i" viewBox="0 0 24 24"><path d="M12 16V3M7 8l5-5 5 5M4 15v5h16v-5"/></svg></span><span class="featurecopy"><b>Selecionar arquivo do modelo</b><small>Escolha um arquivo de modelo compatível no dispositivo.</small></span><span class="chev">›</span></button>
+    <button class="featurecard" id="modelsRemove"><span class="featureicon"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6M14 10v6"/></svg></span><span class="featurecopy"><b>Remover modelo local</b><small>Libera espaço; será necessário selecionar o arquivo novamente.</small></span><span class="chev">›</span></button>
+  </div>
+  <p class="pagefootnote">O formato e os requisitos de memória dependem do modelo suportado pela versão atual do motor nativo. A tela não baixa modelos de IA da internet.</p>
+</section>
+<nav id="bottomNav" aria-label="Navegação principal" hidden>
+  <button class="navtab active" data-tab="chat" aria-label="Conversa"><svg class="i" viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.6A8 8 0 1121 12z"/></svg><span>Conversa</span></button>
+  <button class="navtab" data-tab="lessons" aria-label="Aulas"><svg class="i" viewBox="0 0 24 24"><path d="M3 5.5A2.5 2.5 0 015.5 3H20v16H5.5A2.5 2.5 0 013 16.5zM3 16.5A2.5 2.5 0 015.5 14H20M8 7h8M8 10h6"/></svg><span>Aulas</span></button>
+  <button class="navtab" data-tab="vocab" aria-label="Vocabulário"><svg class="i" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 016.5 3H20v17H6.5A2.5 2.5 0 014 17.5zM4 17.5A2.5 2.5 0 016.5 15H20M8 7h8M8 10h5"/></svg><span>Vocabulário</span></button>
+  <button class="navtab" data-tab="more" aria-label="Mais"><svg class="i" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>Mais</span></button>
+</nav>
 
 <div id="plug">
   <h3>Plugins</h3><p class="note">Where your error reports can go. Needs internet only when you send.</p>
@@ -677,6 +823,93 @@ if(NB){
   try{const c=NativeBridge.getLastCrash();if(c)logErr('previous-run',c)}catch(e){}
 }
 refreshErrUI();ghUI();
+
+
+/* ===== Navigation and learning screens (local-only UI additions) ===== */
+const MAIN_TABS=['chat','lessons','vocab','more'];
+function syncBottomNav(id){
+  const nav=$('bottomNav');if(!nav)return;
+  nav.hidden=!id||id==='splash'||id==='welcome';
+  nav.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===(id==='voice'?'chat':id)));
+}
+const originalGo=go;
+go=function(id){
+  if(!$(id))return;
+  originalGo(id);
+  syncBottomNav(id);
+  if(id==='saved')renderSaved();
+  if(id==='vocab')renderVocab();
+  if(id==='models')refreshModelsPage();
+};
+document.querySelectorAll('#bottomNav [data-tab]').forEach(b=>b.addEventListener('click',()=>{
+  const id=b.dataset.tab;
+  if(id==='chat'){render();go('chat');}
+  else go(id);
+}));
+function startLesson(prompt){
+  stopAll();
+  const c={id:''+Date.now(),title:'Aula · '+(prompt.includes('café')?'Restaurante':prompt.includes('interview')?'Entrevista':prompt.includes('pronunciation')?'Escuta e fala':'Apresentações'),msgs:[]};
+  chats.unshift(c);curId=c.id;persist();render();$('inp').value=prompt;go('chat');$('inp').focus();
+}
+document.querySelectorAll('[data-lesson]').forEach(b=>b.addEventListener('click',()=>startLesson(b.dataset.lesson)));
+$('lessonQuick').onclick=()=>{render();go('chat');$('inp').focus();};
+$('openSettingsPage').onclick=()=>{panel('sheet',true);};
+$('openModelsPage').onclick=()=>go('models');
+$('openSavedPage').onclick=()=>go('saved');
+$('openDrawerMore').onclick=()=>panel('drawer',true);
+$('savedBack').onclick=()=>go('more');
+$('modelsBack').onclick=()=>go('more');
+$('savedNew').onclick=()=>{$('newc').click();};
+function renderSaved(){
+  const host=$('savedList');if(!host)return;host.innerHTML='';
+  if(!chats.length){host.innerHTML='<div class="emptyPage">Ainda não há conversas guardadas.<br>Comece uma conversa e ela aparecerá aqui.</div>';return;}
+  chats.forEach(c=>{
+    const card=document.createElement('button');card.className='featurecard';
+    const preview=(c.msgs||[]).slice().reverse().find(m=>m&&m.t);
+    card.innerHTML='<span class="featureicon"><svg class="i" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 9h8M8 13h6"/></svg></span><span class="featurecopy"><b></b><small></small></span><span class="chev">›</span>';
+    card.querySelector('b').textContent=c.title||'Conversa sem título';
+    card.querySelector('small').textContent=preview?preview.t.slice(0,88):'Conversa ainda sem mensagens';
+    card.onclick=()=>{stopAll();curId=c.id;persist();render();go('chat');};
+    host.appendChild(card);
+  });
+}
+let vocabItems=ld('echo.vocabulary',[]);
+function renderVocab(){
+  const host=$('vocabList');if(!host)return;host.innerHTML='';
+  $('vocabCount').textContent=vocabItems.length+' '+(vocabItems.length===1?'palavra':'palavras');
+  if(!vocabItems.length){host.innerHTML='<div class="emptyPage">Seu caderno está vazio.<br>Adicione a primeira palavra ou expressão acima.</div>';return;}
+  vocabItems.forEach((v,i)=>{
+    const el=document.createElement('div');el.className='vocabitem';
+    const copy=document.createElement('div');copy.style.flex='1';copy.style.minWidth='0';
+    const word=document.createElement('b');word.textContent=v.word;copy.appendChild(word);
+    const meaning=document.createElement('small');meaning.textContent=v.meaning||'Sem significado adicionado';copy.appendChild(meaning);
+    const practice=document.createElement('button');practice.textContent='Praticar';practice.onclick=()=>startLesson('Help me practice the English expression "'+v.word.replace(/["\\]/g,'')+'". Explain its meaning in simple English, give a natural example, and ask me to make my own sentence.');
+    const del=document.createElement('button');del.textContent='✕';del.setAttribute('aria-label','Excluir '+v.word);del.onclick=()=>{vocabItems.splice(i,1);sv('echo.vocabulary',vocabItems);renderVocab();};
+    el.append(copy,practice,del);host.appendChild(el);
+  });
+}
+$('vocabForm').addEventListener('submit',e=>{
+  e.preventDefault();const word=$('vocabWord').value.trim(),meaning=$('vocabMeaning').value.trim();if(!word)return;
+  if(vocabItems.some(v=>v.word.toLowerCase()===word.toLowerCase())){toast('Essa palavra já está no caderno.');return;}
+  vocabItems.unshift({word,meaning,createdAt:Date.now()});if(!sv('echo.vocabulary',vocabItems)){vocabItems.shift();toast('Não foi possível salvar no armazenamento local.');return;}
+  $('vocabWord').value='';$('vocabMeaning').value='';renderVocab();toast('Palavra salva neste aparelho.');
+});
+function refreshModelsPage(){
+  const status=$('status')?.textContent||'Estado desconhecido';
+  $('modelsStatus').textContent=status;
+  const ok=/ready|loaded/i.test(status);
+  $('modelsDescription').textContent=ok?'O modelo está indicado como carregado. A geração permanece na implementação nativa local.':'Selecione um arquivo de modelo compatível. Sem modelo carregado, o aplicativo pode mostrar o modo de demonstração; nenhuma IA na nuvem será adicionada.';
+  $('moreVersion').textContent=($('ver')?.textContent||'English AI')+' · Conversas e preferências ficam no armazenamento local do app.';
+}
+$('modelsChoose').onclick=()=>{
+  try{if(NB&&typeof NativeBridge.pickModel==='function'){NativeBridge.pickModel();return;}}catch(e){}
+  const label=$('file').parentElement.querySelector('label[for="file"]');if(label)label.click();else $('file').click();
+};
+$('modelsRemove').onclick=()=>{$('rmModel').click();setTimeout(refreshModelsPage,250);};
+$('status').addEventListener('click',refreshModelsPage);
+const _renderExisting=render;
+render=function(){_renderExisting();if($('savedList'))renderSaved();};
+syncBottomNav(document.querySelector('.screen.on')?.id||'welcome');
 
 /* ================= START ================= */
 (function(){const sl=$('slide'),k=$('knob');let down=false,x0=0,max=0;const pos=x=>k.style.transform=`translateX(${x}px)`;
