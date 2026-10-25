@@ -178,6 +178,9 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     @JavascriptInterface fun isMorningAlarmEnabled(): Boolean =
         activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE).getBoolean("morningAlarmEnabled", false)
 
+    @JavascriptInterface fun isHotwordEnabled(): Boolean =
+        activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE).getBoolean("hotwordEnabled", false)
+
     /** Start hotword only from the visible app after the user explicitly enables it. */
     @JavascriptInterface fun setHotwordEnabled(enabled: Boolean) {
         val prefs = activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
