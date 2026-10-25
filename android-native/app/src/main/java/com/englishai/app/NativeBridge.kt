@@ -29,6 +29,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private val engine = LiteRtEngine(activity)
+    private val userSettings = UserSettings(activity)
     private var tts: TextToSpeech? = null
     private var recognizer: SpeechRecognizer? = null
     @Volatile private var ptTranslator: Translator? = null
@@ -142,6 +143,24 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         val am = activity.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
         val mi = android.app.ActivityManager.MemoryInfo(); am.getMemoryInfo(mi); return mi.totalMem
     }
+    /** Native mirror of settings edited by the WebView. */
+    @JavascriptInterface fun saveUserSettings(json: String) {
+        try { userSettings.save(json) } catch (_: Exception) {}
+    }
+    @JavascriptInterface fun getUserName(): String = userSettings.userName()
+    @JavascriptInterface fun isWithinActiveRoutine(): Boolean = userSettings.isWithinActiveRoutine()
+    /** Speak the personalized greeting only inside a configured morning/evening window. */
+    @JavascriptInterface fun triggerGreeting() {
+        if (!userSettings.isWithinActiveRoutine()) return
+        val greeting = EnglishTtsManager.greeting(userSettings.userName())
+        main.post {
+            try {
+                tts?.setLanguage(Locale.US)
+                tts?.speak(greeting, TextToSpeech.QUEUE_FLUSH, null, "english-ai-greeting")
+            } catch (_: Exception) {}
+        }
+    }
+
     /** Shown in Settings so you can confirm which build is installed. */
     @JavascriptInterface fun getInfo(): String {
         val v = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName } catch (_: Exception) { "?" }
@@ -311,7 +330,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
 
     @JavascriptInterface fun getVoices() { refreshVoices() }
     fun refreshVoices() { val arr = JSONArray(); tts?.voices?.filter { it.locale.language == "en" }?.forEach { v -> arr.put(JSONObject().put("name", v.name).put("lang", v.locale.toLanguageTag())) }; call("onVoices", JSONObject.quote(arr.toString())) }
-    @JavascriptInterface fun speak(id: String, text: String, rate: String, voiceName: String) { main.post { try { tts?.setSpeechRate(rate.toFloatOrNull() ?: 1f); tts?.voices?.firstOrNull { it.name == voiceName }?.let { tts?.voice = it }; tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) } catch (_: Exception) { call("onTtsDone", JSONObject.quote(id)) } } }
+    @JavascriptInterface fun speak(id: String, text: String, rate: String, voiceName: String) { main.post { try { val clean = EnglishTtsManager.sanitizeText(text); if (clean.isBlank()) { call("onTtsDone", JSONObject.quote(id)); return@post }; tts?.language = Locale.US; tts?.setSpeechRate(rate.toFloatOrNull() ?: 1f); tts?.voices?.firstOrNull { it.name == voiceName && it.locale.language == "en" }?.let { tts?.voice = it }; tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, id) } catch (_: Exception) { call("onTtsDone", JSONObject.quote(id)) } } }
     @JavascriptInterface fun stopSpeaking() { main.post { tts?.stop() } }
     @JavascriptInterface fun startListening() { main.post { requestMic() } }
     fun startListeningGranted() {
