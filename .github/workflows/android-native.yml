@@ -2,7 +2,7 @@ name: Build English Ai native Android
 on:
   workflow_dispatch:
   push:
-    branches: [native-android-offline, native-android-1.3-claude-fixes, native-android-1.3.4-subtitle-smoothness]
+    branches: [native-android-offline, native-android-1.3-claude-fixes, native-android-1.3.4-subtitle-smoothness, repair/english-ai-v1.3.4-audio-history]
     paths:
       - 'android-native/**'
       - 'index.html'
