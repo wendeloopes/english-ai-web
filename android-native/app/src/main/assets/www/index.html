@@ -284,6 +284,8 @@ function showCap(s,idx){
 
 /* ================= SPEECH OUT (US English) ================= */
 let q=[],talking=false,busy=false,gen=0;
+let nativeTranslationId='', nativeTranslationBubble=null, nativeLivePt={}, nativeLiveCount=0, nativePtFinal=false;
+
 const voices=()=>window.speechSynthesis?.getVoices?.().filter(v=>/^en/i.test(v.lang))||[];
 function pickVoice(){const v=voices();return v.find(x=>x.name===S.voice)||v.find(x=>x.lang==='en-US'&&/google|natural|samantha|aria|jenny|neural/i.test(x.name))||v.find(x=>x.lang==='en-US')||v[0]}
 function enqueue(s){s=s.replace(/[*#_`>]/g,'').trim();if(!s)return;q.push(s);pump()}
@@ -432,7 +434,7 @@ $('wipe').onclick=()=>{if(confirm('Delete all conversations?')){chats=[];curId=n
 /* Native Android adapter: keep the approved UI; replace browser-only capabilities. */
 if (window.NativeBridge) {
   try{ $('ver').textContent='English Ai '+NativeBridge.getInfo(); }catch(e){}
-  let nativeTokenHandler=null, nativeDone=null, nativeSpeakingId='', nativeListening=false, nativeMicLevel=0, nativeTranslationId='', nativeTranslationBubble=null, nativeLivePt={}, nativeLiveCount=0, nativePtFinal=false;
+  let nativeTokenHandler=null, nativeDone=null, nativeSpeakingId='', nativeListening=false, nativeMicLevel=0;
   window.Native = window.Native || {};
   window.Native.onModelStatus = (ok,label,msg) => { setStatus(label || (ok?'Gemma ready · offline':'Demo mode'),!!ok); $('prog').style.display='none'; if(msg) $('mstat').textContent=msg; };
   window.Native.onModelProgress = p => { $('prog').style.display='block'; $('prog').value=Math.max(0,Math.min(1,Number(p)||0)); };
