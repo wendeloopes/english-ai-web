@@ -86,3 +86,27 @@ PASSAGEM DE TRABALHO
 - Código do app alterado nesta etapa: nenhum.
 - Artefato pendente: apply_v1.3.5_fixes.py da Claude não foi anexado nesta conversa.
 - Próximo passo: comparar o script com a branch de reparo; evitar reaplicação duplicada; build e teste real antes de promover a versão.
+
+
+8. ATUALIZAÇÃO CI — RUN 40217563118, TENTATIVA 2
+Consulta final: 2026-10-25T18:24:07Z
+Status final do workflow: completed
+Conclusão: SUCCESS
+Tentativa: 2
+Commit compilado: a75e755116debd1c1e51bfb79d38b92b6561547c
+Job build: SUCCESS (ID 121251963326)
+- Static checks (tools/static_check.py): SUCCESS
+- Compile debug APK: SUCCESS
+- Verify APK versionName 1.3.4 / versionCode 7: SUCCESS
+- Upload de artefatos: SUCCESS
+
+NOVO APK DA TENTATIVA 2 (não usar o artefato da tentativa 1):
+Nome: English-Ai-Native-debug-apk
+Artifact ID: 12609635158
+Criado em: 2026-10-25T18:24:03Z
+Tamanho do ZIP do artefato: 23,449,251 bytes
+Digest SHA-256 do ZIP do artefato: 280d93ce9f717112a0022642fa25327853a9e7edcd490c054b8caf9abf1de1b0
+Link do artefato: https://github.com/wendeloopes/english-ai-web/actions/runs/40217563118/artifacts/12609635158
+Link do workflow: https://github.com/wendeloopes/english-ai-web/actions/runs/40217563118
+
+Importante: o workflow foi executado sobre a SHA a75e755. O commit a824219 adiciona apenas documentação e não muda o código do app. O build verde confirma os testes automatizados e a verificação da versão no APK; NÃO equivale à homologação física no Samsung Galaxy A56. PR #3 continua sem merge. Aguardar instalação e validação manual do proprietário antes de qualquer merge.
