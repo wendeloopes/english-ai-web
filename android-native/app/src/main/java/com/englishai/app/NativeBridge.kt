@@ -22,6 +22,9 @@ import com.google.mlkit.nl.translate.TranslatorOptions
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.Executors
 
@@ -359,6 +362,130 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
                 modelLoadFailure = e.message
                 status(false, "Import failed", e.message ?: "Could not import model.")
             }
+        }
+    } }
+    /** Download only pinned, publicly accessible LiteRT-LM bundles. SHA-256 is checked before the existing safe model swap. */
+    @JavascriptInterface fun downloadModel(modelId: String) { worker.execute {
+        data class CatalogModel(val name: String, val url: String, val sha256: String, val minBytes: Long)
+        val catalog = mapOf(
+            "gemma4-e2b" to CatalogModel(
+                "Gemma 4 E2B",
+                "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
+                "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
+                2_300_000_000L
+            ),
+            "gemma4-e4b" to CatalogModel(
+                "Gemma 4 E4B",
+                "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm",
+                "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0",
+                3_300_000_000L
+            )
+        )
+        val item = catalog[modelId]
+        if (item == null) {
+            status(false, "Download unavailable", "This model is not in the verified direct-download catalog. Open its official model card and check license/compatibility first.")
+            return@execute
+        }
+        val temp = File(activity.filesDir, "model.tmp")
+        val backup = File(activity.filesDir, "model.bak")
+        var connection: HttpURLConnection? = null
+        var swapped = false
+        try {
+            val free = android.os.StatFs(activity.filesDir.absolutePath).availableBytes
+            val existingBytes = if (modelFile.exists()) modelFile.length() else 0L
+            val required = item.minBytes + existingBytes + 256L * 1024 * 1024
+            require(free >= required) {
+                "Not enough storage for ${item.name}. Need approximately ${required / 1_000_000_000.0} GB free; available ${free / 1_000_000_000.0} GB."
+            }
+            temp.delete()
+            status(false, "Downloading model…", "Downloading ${item.name}. Keep the app open and connected to the internet.")
+            connection = (URL(item.url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 20_000
+                readTimeout = 30_000
+                instanceFollowRedirects = true
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", "EnglishAI-Android/1.3.4")
+            }
+            connection.connect()
+            val code = connection.responseCode
+            require(code in 200..299) { "Model server returned HTTP $code. Check your connection and try again." }
+            val total = connection.contentLengthLong
+            if (total > 0) require(total >= item.minBytes) { "The server returned a file smaller than the verified model. Download cancelled." }
+            val digest = MessageDigest.getInstance("SHA-256")
+            var received = 0L
+            var lastPct = -1
+            connection.inputStream.use { input ->
+                temp.outputStream().buffered(1024 * 1024).use { output ->
+                    val buffer = ByteArray(256 * 1024)
+                    while (true) {
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        if (n == 0) continue
+                        output.write(buffer, 0, n)
+                        digest.update(buffer, 0, n)
+                        received += n
+                        if (total > 0) {
+                            val pct = ((received * 100L) / total).toInt().coerceIn(0, 100)
+                            if (pct != lastPct) {
+                                lastPct = pct
+                                call("onModelDownloadProgress", (pct / 100.0).toString(), received.toString(), total.toString(), JSONObject.quote(item.name))
+                            }
+                        } else if (received % (8L * 1024 * 1024) < buffer.size) {
+                            call("onModelDownloadProgress", "0", received.toString(), "-1", JSONObject.quote(item.name))
+                        }
+                    }
+                }
+            }
+            require(received >= item.minBytes) { "Download incomplete: received ${received / 1_000_000} MB. Your previous model was not changed. Please retry." }
+            val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
+            require(actualHash.equals(item.sha256, ignoreCase = true)) {
+                "Integrity check failed (SHA-256 mismatch). The downloaded file was discarded and your previous model was kept."
+            }
+            call("onModelDownloadProgress", "1", received.toString(), total.toString(), JSONObject.quote(item.name))
+            // Commit only after the whole download and hash have been verified.
+            try { engine.close() } catch (_: Exception) {}
+            backup.delete()
+            val hadOld = modelFile.exists()
+            if (hadOld) check(modelFile.renameTo(backup)) { "Could not protect the existing model before installing the download." }
+            swapped = true
+            check(temp.renameTo(modelFile)) { "Could not commit the downloaded model to private app storage." }
+            modelLoadFailure = "The model is still loading. Wait for Model ready before sending a message."
+            status(false, "Loading model…", "${item.name} downloaded and verified. Initializing LiteRT-LM…")
+            val loadError = doLoad()
+            if (loadError == null) {
+                backup.delete()
+                modelLoadFailure = null
+                reportLoad(null, "${item.name} downloaded, SHA-256 verified and loaded for offline use.")
+            } else {
+                try { engine.close() } catch (_: Exception) {}
+                modelFile.delete()
+                if (hadOld && backup.renameTo(modelFile)) {
+                    val restoreError = doLoad()
+                    if (restoreError == null) reportLoad(null, "The new model could not load ($loadError). The previous working model was restored.")
+                    else reportLoad(restoreError, "")
+                } else {
+                    modelLoadFailure = loadError
+                    status(false, "Model could not load", "$loadError")
+                }
+            }
+        } catch (e: Throwable) {
+            temp.delete()
+            if (swapped && backup.exists()) {
+                try { engine.close() } catch (_: Exception) {}
+                modelFile.delete()
+                if (backup.renameTo(modelFile)) {
+                    val restoreError = doLoad()
+                    if (restoreError == null) reportLoad(null, "Download/install failed (${e.message}). Your previous model was restored.")
+                    else reportLoad(restoreError, "")
+                } else {
+                    status(false, "Download failed", "${e.message ?: "Could not download model."} The backup could not be restored automatically.")
+                }
+            } else {
+                status(false, "Download failed", e.message ?: "The connection was interrupted. Your current model was not changed; please retry.")
+            }
+        } finally {
+            connection?.disconnect()
+            if (!swapped) temp.delete()
         }
     } }
     @JavascriptInterface fun removeModel() { worker.execute { engine.close(); modelFile.delete(); File(activity.filesDir, "model.tmp").delete(); modelLoadFailure = "The local model was removed. Import a compatible .litertlm file in Settings before starting an AI conversation."; status(false, "Demo mode", "Model removed from this phone.") } }
