@@ -634,7 +634,9 @@ $('saveRoutine').onclick=saveRoutineSettings;
     offlineStatus.textContent=message||'Offline speech status updated.';
     if(/installed and ready|already installed/i.test(offlineStatus.textContent)){
       offlineBtn.textContent='Downloaded ✓';offlineBtn.disabled=true;
-    }else offlineBtn.disabled=false;
+    }else if(/Downloading offline English speech model|Starting download/i.test(offlineStatus.textContent)){
+      offlineBtn.disabled=true;offlineBtn.textContent='Downloading…';
+    }else{offlineBtn.disabled=false;offlineBtn.textContent='Retry download';}
   };
   alarm.addEventListener('change',()=>{
     if(!NB||typeof NativeBridge.setMorningAlarm!=='function'){alarm.checked=false;$('morningAlarmStatus').textContent='This control requires the native Android build.';return}
