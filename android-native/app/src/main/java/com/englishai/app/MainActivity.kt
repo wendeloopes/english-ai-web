@@ -19,7 +19,23 @@ class MainActivity : ComponentActivity() {
     private var pageReady = false
     private var pendingHotwordActivation = false
     private var pauseHotwordForActivation = false
+    private var pendingAnkiTsv = ""
     private val pickModel = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) bridge.importModel(uri) }
+    private val createAnkiExport = registerForActivityResult(ActivityResultContracts.CreateDocument("text/tab-separated-values")) { uri ->
+        if (uri == null) {
+            bridge.onAnkiExportResult(false, "Exportação cancelada.")
+        } else {
+            try {
+                val output = contentResolver.openOutputStream(uri) ?: error("Não foi possível abrir o arquivo escolhido.")
+                output.use { it.write(pendingAnkiTsv.toByteArray(Charsets.UTF_8)) }
+                bridge.onAnkiExportResult(true, "TSV salvo. Importe no Anki usando tabulação como separador e a terceira coluna como Tags.")
+            } catch (e: Exception) {
+                bridge.onAnkiExportResult(false, e.message ?: "Não foi possível salvar o TSV.")
+            } finally {
+                pendingAnkiTsv = ""
+            }
+        }
+    }
     private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) bridge.startListeningGranted() else bridge.speechError("Microphone permission is required for voice practice.")
     }
@@ -75,7 +91,10 @@ class MainActivity : ComponentActivity() {
                 dispatchPendingHotwordActivation()
             }
         }
-        bridge = NativeBridge(this, web, { pickModel.launch(arrayOf("*/*")) }, { requestMic() })
+        bridge = NativeBridge(this, web, { pickModel.launch(arrayOf("*/*")) }, { requestMic() }, { tsv, filename ->
+            pendingAnkiTsv = tsv
+            createAnkiExport.launch(filename)
+        })
         web.addJavascriptInterface(bridge, "NativeBridge")
         setContentView(web)
         web.loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
