@@ -90,4 +90,18 @@ try:
     chk('settings UI includes morning/evening windows and two interaction modes', all(x in h for x in ['id="morningStart"','id="morningEnd"','id="eveningStart"','id="eveningEnd"','value="continuous"','value="individual"','id="saveRoutine"']))
 except Exception as e:
     chk('native assistant routines checks',False,str(e))
+# Scheduled alarm + explicit foreground hotword regression checks.
+try:
+    bg=rd(K+'AssistantBackgroundServices.kt')
+    t=re.sub(r'//.*','',re.sub(r'"(?:\\.|[^"\\])*"','""',bg))
+    chk('background assistant services have balanced Kotlin delimiters', t.count('{')==t.count('}') and t.count('(')==t.count(')'))
+    chk('04:40 alarm schedules daily and restores after reboot', all(x in bg for x in ['class MorningAlarmReceiver','scheduleNext(context, 4, 40)','class AssistantBootReceiver','morningAlarmEnabled']))
+    chk('alarm service speaks a personalized English greeting', all(x in bg for x in ['class AlarmGreetingService','Locale.US','Good morning, $name','english-ai-morning-alarm']))
+    chk('hotword uses visible microphone foreground service and explicit stop action', all(x in bg for x in ['class HotwordListeningService','startForeground(HOTWORD_NOTIFICATION','ACTION_STOP','hi english ai','createOnDeviceSpeechRecognizer']))
+    chk('manifest declares required foreground-service permissions and components', all(x in mf for x in ['FOREGROUND_SERVICE_MICROPHONE','FOREGROUND_SERVICE_MEDIA_PLAYBACK','MorningAlarmReceiver','AlarmGreetingService','HotwordListeningService','AssistantBootReceiver']))
+    chk('bridge exposes alarm and hotword controls', all(x in nb for x in ['fun setMorningAlarm(enabled: Boolean)','fun isMorningAlarmEnabled()','fun setHotwordEnabled(enabled: Boolean)','fun isHotwordEnabled()']))
+    chk('UI exposes alarm time and opt-in hotword toggle', all(x in h for x in ['morningAlarmToggle','Daily alarm · 04:40','hotwordToggle','Hi, English AI!” activation','onMorningAlarmStatus','onHotwordStatus']))
+except Exception as e:
+    chk('alarm/hotword regression checks',False,str(e))
+
 print('\nRESULT:','ALL PASSED' if ok else 'FAILURES'); sys.exit(0 if ok else 1)
