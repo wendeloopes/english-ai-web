@@ -209,6 +209,11 @@ const ld=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}cat
 let S=Object.assign({speak:true,caps:true,hands:false,sfx:true,pt:true,name:'',rate:1,voice:''},ld('echo.set',{}));
 let chats=ld('echo.chats',[]),curId=ld('echo.cur',null),muted=false;
 const persist=()=>{sv('echo.chats',chats);sv('echo.cur',curId)};
+let persistTimer=0;
+const schedulePersist=()=>{clearTimeout(persistTimer);persistTimer=setTimeout(()=>{persistTimer=0;persist()},300)};
+const flushPersist=()=>{clearTimeout(persistTimer);persistTimer=0;persist()};
+window.addEventListener('pagehide',flushPersist);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)flushPersist()});
 const cur=()=>{let c=chats.find(x=>x.id===curId);if(!c){c={id:''+Date.now(),title:'New conversation',msgs:[]};chats.unshift(c);curId=c.id;persist()}return c};
 
 /* ================= ORB ================= */
@@ -360,7 +365,7 @@ async function ask(text){
   try{
     await Brain.reply(hist,p=>{raw+=p;const sp=splitPt(raw);buf+=sp.en.slice(fed);fed=sp.en.length;ai.t=sp.en.trim();ai.pt=S.pt?sp.pt:'';
       if(ai.pt)nativePtFinal=true;
-      bub.firstChild.textContent=ai.t;if(ai.pt){bub.querySelector('.pt').textContent=ai.pt;$('capPt').textContent=ai.pt}
+      bub.firstChild.textContent=ai.t;if(ai.pt){bub.querySelector('.pt').textContent=ai.pt;$('capPt').textContent=ai.pt}schedulePersist();
       if(S.pt&&NB&&typeof NativeBridge.translate==='function'&&!sp.pt){const sentences=(sp.en.match(/[^.!?]+[.!?]+/g)||[]).map(s=>s.trim()).filter(Boolean);while(nativeLiveCount<sentences.length){const idx=nativeLiveCount++;NativeBridge.translate('live:'+my+':'+idx,sentences[idx]);}}
       $('msgs').scrollTop=1e9;
       if(!speak){state!=='speaking'&&setState('speaking');cap(esc(ai.t.slice(-170)))}flush(false)},alive);
