@@ -961,6 +961,7 @@ syncBottomNav(document.querySelector('.screen.on')?.id||'welcome');
     grid.querySelectorAll('[data-enhanced-lesson]').forEach(b=>b.addEventListener('click',()=>{
       const id=b.dataset.enhancedLesson,prompt=lessonData.find(x=>x[0]===id)[4],p=progressData();p[id]=p[id]||{starts:0};p[id].starts=(p[id].starts||0)+1;p[id].lastStarted=Date.now();sv('echo.lessonProgress',p);drawLessonProgress();
       startLesson(prompt);
+      const current=cur();current.title='Aula · '+({greetings:'Cumprimentos e Apresentações',work:'No trabalho',travel:'Viagens e Turismo',daily:'Vida no dia a dia',food:'Comida e Restaurante'}[id]||'Prática');persist();render();
     }));
   }
   // Strengthen the existing tutor prompt: the model sees Vosk's recognized text, not raw phonetics.
@@ -991,8 +992,6 @@ syncBottomNav(document.querySelector('.screen.on')?.id||'welcome');
     tools.querySelectorAll('[data-enh-filter]').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.enhFilter;tools.querySelectorAll('[data-enh-filter]').forEach(x=>x.classList.toggle('active',x===b));renderVocab()}));
     $('enhAnki').onclick=()=>{if(!vocabItems.length)return toast('Adicione palavras antes de exportar.');const clean=x=>String(x||'').replace(/[\t\r\n]+/g,' ').trim(),tsv=vocabItems.map(v=>clean(v.word)+String.fromCharCode(9)+clean(v.meaning)+String.fromCharCode(9)+'English AI').join(String.fromCharCode(10));try{if(NB&&typeof NativeBridge.copyText==='function'){NativeBridge.copyText(tsv);toast('Cartões copiados. Importe no Anki como campos separados por tabulação.');return}const blob=new Blob([String.fromCharCode(65279)+tsv],{type:'text/tab-separated-values;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='english-ai-anki-'+localDay()+'.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Arquivo para Anki preparado.')}catch(e){toast('Exportação não disponível neste WebView.')}};
     $('enhReview').onclick=()=>{const x=vocabItems.find(v=>!v.learned)||vocabItems[0];if(!x)return toast('Adicione palavras para revisar.');markReview(x);save();renderVocab();startLesson('Run a short spaced-repetition review for the English expression "'+x.word.replace(/["\\]/g,'')+'". Portuguese meaning: "'+(x.meaning||'not supplied').replace(/["\\]/g,'')+'". Ask me to recall the meaning, then show a natural example and ask me to use it in a sentence.')};
-    const oldSubmit=vocabForm.onsubmit;
-    vocabForm.addEventListener('submit',()=>setTimeout(()=>{const item=vocabItems.find(v=>v.word===$('vocabWord').value.trim());if(item){item.favorite=!!item.favorite;item.learned=!!item.learned;item.reviewDays=item.reviewDays||[];save();renderVocab()}},0));
   }
 
   // Add drawer quick access without removing the existing saved conversation list.
