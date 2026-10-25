@@ -988,7 +988,7 @@ function renderSaved(){
     host.appendChild(card);
   });
 }
-let vocabItems=(()=>{try{if(NB&&typeof NativeBridge.getVocabularyData==='function'){const raw=NativeBridge.getVocabularyData();if(raw){const parsed=JSON.parse(raw);if(Array.isArray(parsed)){localStorage.setItem('echo.vocabulary',JSON.stringify(parsed));return parsed}}}}catch(e){}return ld('echo.vocabulary',[])})();
+let vocabItems=(()=>{const local=ld('echo.vocabulary',[]);try{if(NB&&typeof NativeBridge.getVocabularyData==='function'){const raw=NativeBridge.getVocabularyData();if(raw){const parsed=JSON.parse(raw);if(Array.isArray(parsed)){if(!parsed.length&&local.length){NativeBridge.saveVocabularyData(JSON.stringify(local));return local}localStorage.setItem('echo.vocabulary',JSON.stringify(parsed));return parsed}}}}catch(e){}return local})();
 function renderVocab(){
   const host=$('vocabList');if(!host)return;host.innerHTML='';
   $('vocabCount').textContent=vocabItems.length+' '+(vocabItems.length===1?'palavra':'palavras');
