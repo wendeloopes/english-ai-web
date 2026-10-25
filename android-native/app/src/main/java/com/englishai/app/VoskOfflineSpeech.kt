@@ -91,7 +91,7 @@ class VoskOfflineSpeech(
                 ZipInputStream(zipFile.inputStream().buffered()).use { zip ->
                     while (true) {
                         val entry = zip.nextEntry ?: break
-                        val raw = entry.name.replace('\\\\', '/')
+                        val raw = entry.name.replace('\\', '/')
                         val pieces = raw.split('/').filter { it.isNotEmpty() }
                         // Ignore the archive's single top-level model folder.
                         val relative = if (pieces.size > 1) pieces.drop(1).joinToString("/") else ""
