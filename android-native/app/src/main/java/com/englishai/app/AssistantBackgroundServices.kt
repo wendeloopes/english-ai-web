@@ -203,14 +203,14 @@ class HotwordListeningService : Service() {
                         bytes[i * 2] = (sample and 0xff).toByte()
                         bytes[i * 2 + 1] = (sample shr 8).toByte()
                     }
-                    val json = if (grammarRecognizer.acceptWaveForm(bytes, bytes.size))
-                        grammarRecognizer.result else grammarRecognizer.partialResult
-                    val text = JSONObject(json).optString(if (json == grammarRecognizer.result) "text" else "partial", "").trim()
+                    val isFinal = grammarRecognizer.acceptWaveForm(bytes, bytes.size)
+                    val json = if (isFinal) grammarRecognizer.result else grammarRecognizer.partialResult
+                    val text = JSONObject(json).optString(if (isFinal) "text" else "partial", "").trim()
                     if (text.isNotBlank()) {
                         val bundle = android.os.Bundle().apply {
                             putStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf(text))
                         }
-                        checkPhrase(bundle, json == grammarRecognizer.result)
+                        checkPhrase(bundle, isFinal)
                     }
                 }
             } catch (_: Exception) {
