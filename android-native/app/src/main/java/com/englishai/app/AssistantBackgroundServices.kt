@@ -201,6 +201,7 @@ class HotwordListeningService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onDestroy() {
         active = false
+        getSharedPreferences("english_ai_user_settings", MODE_PRIVATE).edit().putBoolean("hotwordEnabled", false).apply()
         try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) {}
         try { tts?.stop(); tts?.shutdown() } catch (_: Exception) {}
         stopForeground(STOP_FOREGROUND_REMOVE)
