@@ -28,7 +28,7 @@ import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.Executors
 
-class NativeBridge(private val activity: Activity, private val web: WebView, private val choose: () -> Unit, private val requestMic: () -> Unit) {
+class NativeBridge(private val activity: Activity, private val web: WebView, private val choose: () -> Unit, private val requestMic: () -> Unit, private val exportTsv: (String, String) -> Unit) {
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private val engine = LiteRtEngine(activity)
@@ -292,6 +292,31 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     } }
     fun reloadIfUnloaded() = setForeground(true)
     fun trimMemory() { worker.execute { engine.trimConversation() } }
+    /** Private on-device persistence for vocabulary and spaced-repetition progress. */
+    @JavascriptInterface fun getVocabularyData(): String {
+        return activity.getSharedPreferences("english_ai_vocabulary", Activity.MODE_PRIVATE)
+            .getString("cards", "[]") ?: "[]"
+    }
+    @JavascriptInterface fun saveVocabularyData(json: String) {
+        if (json.length > 1_500_000) return
+        try {
+            JSONArray(json)
+            activity.getSharedPreferences("english_ai_vocabulary", Activity.MODE_PRIVATE)
+                .edit().putString("cards", json).apply()
+        } catch (_: Exception) { /* Never overwrite a previously valid saved deck with malformed data. */ }
+    }
+    @JavascriptInterface fun exportAnkiTsv(tsv: String, filename: String) {
+        if (tsv.length > 5_000_000 || !filename.matches(Regex("english-ai-anki-[0-9-]+\\.tsv"))) {
+            call("onAnkiExportStatus", "false", JSONObject.quote("O arquivo TSV é inválido ou excede o limite permitido."))
+            return
+        }
+        main.post { try { exportTsv(tsv, filename) } catch (e: Exception) {
+            call("onAnkiExportStatus", "false", JSONObject.quote(e.message ?: "Não foi possível abrir o salvamento do TSV."))
+        } }
+    }
+    fun onAnkiExportResult(success: Boolean, message: String) {
+        call("onAnkiExportStatus", success.toString(), JSONObject.quote(message))
+    }
     @JavascriptInterface fun copyText(text: String) { main.post { try { val cm = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager; cm.setPrimaryClip(android.content.ClipData.newPlainText("English Ai", text)) } catch (_: Exception) {} } }
     @JavascriptInterface fun openUrl(url: String) { main.post { try { if (url.startsWith("https://")) activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {} } }
     /** Text of the last crash / system kill (low memory, native crash...), or "". Read once at startup by the error log. */
