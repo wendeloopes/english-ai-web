@@ -535,20 +535,39 @@ const Brain={llm:null,last:null,
   cancel(){try{this.llm&&this.llm.cancelProcessing()}catch(e){}},
   async reply(msgs,on,alive){
     if(onlineMode==='online'){
-      if(!onlineSessionKey){on('Modo online selecionado, mas falta uma chave Gemini nesta sessão. Abra Modelos de IA e informe a chave.');return}
+      const fallbackOffline=async(reason)=>{
+        onlineMode='offline';sv('echo.aiMode','offline');
+        const status=$('aiModeStatus');if(status)status.textContent='Modo offline ativado automaticamente. '+reason;
+        toast('IA online indisponível. Continuando no modo offline.');
+        return this.reply(msgs,on,alive);
+      };
+      // A persisted online preference has no persisted API key by design. Never strand a new session.
+      if(!onlineSessionKey)return fallbackOffline('A chave online não está disponível nesta sessão.');
+      if(!navigator.onLine)return fallbackOffline('Sem conexão com a internet.');
+      let timeoutId=0;
       try{
         const contents=msgs.slice(-10).filter(m=>m&&m.t).map(m=>({role:m.r==='me'?'user':'model',parts:[{text:String(m.t)}]}));
         while(contents.length&&contents[0].role!=='user')contents.shift();
+        const controller=new AbortController();
+        timeoutId=setTimeout(()=>controller.abort(),20000);
         const response=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent($('aiProvider')?.value||'gemini-2.5-flash')+':generateContent?key='+encodeURIComponent(onlineSessionKey),{
-          method:'POST',headers:{'Content-Type':'application/json'},
+          method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,
           body:JSON.stringify({systemInstruction:{parts:[{text:sysPrompt()+' You are an English conversation tutor. Correct serious grammar or meaning mistakes naturally, briefly, and kindly.'}]},contents,generationConfig:{temperature:.7,maxOutputTokens:512}})
         });
+        if(!response.ok){
+          let detail='HTTP '+response.status;try{const data=await response.json();detail=data?.error?.message||detail}catch(e){}
+          if(response.status>=500)return fallbackOffline('O serviço online está indisponível.');
+          throw new Error(detail);
+        }
         const data=await response.json();
-        if(!response.ok)throw new Error(data?.error?.message||('HTTP '+response.status));
         const answer=(data?.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('').trim();
         if(!answer)throw new Error('O assistente online não retornou texto.');
         if(alive())on(answer);
-      }catch(e){if(alive())on('Falha no modo online: '+(e.message||e)+'. Você pode voltar ao modo offline em Modelos de IA.')}
+      }catch(e){
+        if(!alive())return;
+        if(!navigator.onLine||e?.name==='TypeError'||e?.name==='AbortError')return fallbackOffline(e?.name==='AbortError'?'A conexão online demorou demais.':'A conexão com o serviço online falhou.');
+        on('Falha no modo online: '+(e.message||e)+'. Você pode voltar ao modo offline em Modelos de IA.');
+      }finally{if(timeoutId)clearTimeout(timeoutId)}
       return;
     }
     if(!this.llm){const t=demo(msgs.at(-1).t);for(const w of t.split(/(?<=\s)/)){if(!alive())return;on(w);await sleep(60)}return}
@@ -868,7 +887,7 @@ if(NB&&typeof NativeBridge.saveUserSettings==='function'){
   }catch(e){}
 }
 
-$('nameIn').value=S.name||'';$('nameIn').oninput=e=>{S.name=e.target.value.trim().slice(0,24);sv('echo.set',S)};
+$('nameIn').value=S.name||'';$('nameIn').oninput=e=>{S.name=e.target.value.trim().slice(0,24);if(!sv('echo.set',S))toast('Não foi possível salvar o nome neste aparelho.');};$('nameIn').onchange=()=>{if(typeof saveRoutineSettings==='function')saveRoutineSettings()};
 tg('tPt','pt');$('tPt').addEventListener('click',()=>{if(!S.pt){$('capPt').textContent='';return;} if(NB&&typeof NativeBridge.ptEnsure==='function'){ $('mstat').textContent='Preparing Portuguese subtitles…'; NativeBridge.ptEnsure(); restorePortugueseCaption(); }});
 function restorePortugueseCaption(){if(!S.pt)return;const c=cur(),last=[...c.msgs].reverse().find(m=>m.r==='ai'&&m.pt);if(last){$('capPt').textContent=last.pt;const bs=$('msgs').querySelectorAll('.b.ai');const b=bs[bs.length-1];if(b){const slot=b.querySelector('.pt');if(slot)slot.textContent=last.pt;}}}
 function resumePortugueseSupport(){if(!S.pt)return;restorePortugueseCaption();if(NB&&typeof NativeBridge.ptEnsure==='function')NativeBridge.ptEnsure();}
@@ -1144,7 +1163,7 @@ syncBottomNav(document.querySelector('.screen.on')?.id||'welcome');
   const deck=[
     ['How are you doing?','Como você está?'],['Nice to meet you.','Prazer em conhecer você.'],['What do you do?','Com o que você trabalha?'],['Could you help me?','Você poderia me ajudar?'],['I don’t understand.','Eu não entendo.'],['Could you repeat that?','Você poderia repetir?'],['What do you mean?','O que você quer dizer?'],['I’m on my way.','Estou a caminho.'],['I’m running late.','Estou atrasado(a).'],['Take your time.','Não tenha pressa.'],['That sounds good.','Parece ótimo.'],['I’ll think about it.','Vou pensar nisso.'],['How much is it?','Quanto custa?'],['Could I have the bill?','Pode trazer a conta?'],['Where is the nearest station?','Onde fica a estação mais próxima?'],['I’m looking for…','Estou procurando…'],['I’m not sure yet.','Ainda não tenho certeza.'],['It depends.','Depende.'],['I’m looking forward to it.','Estou ansioso(a) por isso.'],['Could you speak more slowly?','Você poderia falar mais devagar?'],['What time does it start?','A que horas começa?'],['I’d like to make a reservation.','Gostaria de fazer uma reserva.'],['Can I pay by card?','Posso pagar com cartão?'],['I agree with you.','Eu concordo com você.'],['I used to…','Eu costumava…'],['I’ve never tried that before.','Nunca experimentei isso antes.'],['Let me check.','Deixe-me verificar.'],['No worries.','Sem problemas.'],['It slipped my mind.','Eu me esqueci.'],['Could you give me a hand?','Você poderia me dar uma mão?']
   ];
-  let cached=ld('echo.anki.deck',null);if(!Array.isArray(cached)||!cached.length){cached=deck.map((p,i)=>({id:i+1,front:p[0],back:p[1],due:0,interval:0,seen:0}));sv('echo.anki.deck',cached)}
+  let cached=ld('echo.anki.deck',null);if(!Array.isArray(cached)||!cached.length){cached=deck.map((p,i)=>({id:i+1,front:p[0],back:p[1],due:0,interval:0,seen:0}));if(!sv('echo.anki.deck',cached))setTimeout(()=>toast('Não foi possível guardar o baralho localmente. Verifique o armazenamento do app.'),500)}
   const vocab=$('vocab');
   if(vocab&&!$('ankiLocal')){
     const box=document.createElement('section');box.id='ankiLocal';box.innerHTML='<h2 style="font-size:18px">Baralho de inglês · Anki</h2><p class="pageintro">Baralho incluído no app e guardado localmente para estudar sem baixar de novo. O arquivo TSV pode ser importado no Anki; não é um pacote .apkg.</p><div class="actionline"><span class="pill" id="ankiCount">30 cartões em cache</span><button class="btn g" id="ankiDownload" type="button">Exportar para Anki (.tsv)</button></div><div id="ankiCard" role="button" tabindex="0"><div><small>Toque para revelar</small><span id="ankiFront">Toque em “Iniciar revisão”</span></div></div><div class="row2"><button class="btn" id="ankiStart" type="button">Iniciar revisão</button><button class="btn g" id="ankiFlip" type="button">Revelar resposta</button></div><div class="row2"><button class="btn g" id="ankiAgain" type="button">Rever em breve</button><button class="btn" id="ankiGood" type="button">Já sei</button><button class="btn g" id="ankiNext" type="button">Próximo</button></div><small id="ankiStatus" class="miniStatus">Revisão local; seu progresso fica neste aparelho.</small>';
@@ -1154,7 +1173,7 @@ syncBottomNav(document.querySelector('.screen.on')?.id||'welcome');
     function dueCards(){const now=Date.now();return cached.filter(c=>!c.due||c.due<=now)}
     function showCard(){if(!cached.length)return;const list=dueCards();if(idx<0||idx>=list.length)idx=0;const c=list[idx];revealed=false;card.querySelector('small').textContent='Toque para revelar';front.textContent=c?c.front:'Revisão concluída por agora';$('ankiCount').textContent=cached.length+' cartões em cache';status.textContent=c?(c.seen?'Revisões deste cartão: '+c.seen:'Cartão novo'):'Todos os cartões revisados por agora.'}
     function flip(){if(idx<0){idx=0;showCard()}const c=dueCards()[idx];if(!c)return;revealed=!revealed;card.querySelector('small').textContent=revealed?'Resposta':'Toque para revelar';front.textContent=revealed?c.back:c.front}
-    function rate(good){const list=dueCards(),c=list[idx];if(!c)return;c.seen++;c.interval=good?Math.max(1,(c.interval||0)*2||1):0;c.due=Date.now()+(good?c.interval*86400000:10*60000);sv('echo.anki.deck',cached);idx=0;showCard()}
+    function rate(good){const list=dueCards(),c=list[idx];if(!c)return;const previous={seen:c.seen,interval:c.interval,due:c.due};c.seen++;c.interval=good?Math.max(1,(c.interval||0)*2||1):0;c.due=Date.now()+(good?c.interval*86400000:10*60000);if(!sv('echo.anki.deck',cached)){Object.assign(c,previous);status.textContent='Não foi possível salvar o progresso. Libere espaço no aparelho e exporte um backup antes de continuar.';toast('Progresso do Anki não salvo; armazenamento indisponível.');showCard();return}idx=0;showCard()}
     $('ankiStart').onclick=()=>{idx=0;showCard()};$('ankiFlip').onclick=flip;card.onclick=flip;card.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();flip()}};
     $('ankiAgain').onclick=()=>rate(false);$('ankiGood').onclick=()=>rate(true);$('ankiNext').onclick=()=>{idx++;showCard()};
     $('ankiDownload').onclick=()=>{const clean=x=>String(x).replace(/[\t\r\n]+/g,' ');const tsv='Front\tBack\n'+cached.map(c=>clean(c.front)+'\t'+clean(c.back)).join('\n');const blob=new Blob(['\uFEFF'+tsv],{type:'text/tab-separated-values;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='English-AI-Anki-Deck.tsv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);toast('Arquivo TSV pronto para importar no Anki')};
