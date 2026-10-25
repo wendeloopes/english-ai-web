@@ -14,6 +14,11 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import com.google.mlkit.common.model.DownloadConditions
+import com.google.mlkit.nl.translate.TranslateLanguage
+import com.google.mlkit.nl.translate.Translation
+import com.google.mlkit.nl.translate.Translator
+import com.google.mlkit.nl.translate.TranslatorOptions
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -26,6 +31,8 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     private val engine = LiteRtEngine(activity)
     private var tts: TextToSpeech? = null
     private var recognizer: SpeechRecognizer? = null
+    @Volatile private var ptTranslator: Translator? = null
+    private val ptLock = Any()
     @Volatile private var cancelled = false
     @Volatile private var listening = false
     @Volatile private var modelLoadFailure: String? = null
@@ -226,6 +233,54 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         call("onGenDone")
     } catch (e: Exception) { if (cancelled) call("onGenDone") else call("onGenError", JSONObject.quote(e.message ?: "Model generation failed.")) } } }
     @JavascriptInterface fun cancelGenerate() { cancelled = true; engine.cancel() }
+    private fun getPtTranslator(): Translator = synchronized(ptLock) {
+        ptTranslator ?: Translation.getClient(
+            TranslatorOptions.Builder()
+                .setSourceLanguage(TranslateLanguage.ENGLISH)
+                .setTargetLanguage(TranslateLanguage.PORTUGUESE)
+                .build()
+        ).also { ptTranslator = it }
+    }
+
+    private fun withPtTranslator(onReady: (Translator?, String?) -> Unit) {
+        val translator = try { getPtTranslator() } catch (e: Exception) {
+            onReady(null, e.message ?: "Could not initialize Portuguese translation.")
+            return
+        }
+        translator.downloadModelIfNeeded(DownloadConditions.Builder().build())
+            .addOnSuccessListener { onReady(translator, null) }
+            .addOnFailureListener { e -> onReady(null, e.message ?: "Portuguese translation model download failed.") }
+    }
+
+    @JavascriptInterface fun ptEnsure() {
+        withPtTranslator { translator, error ->
+            call("onPtReady", (translator != null).toString(),
+                JSONObject.quote(error ?: "Portuguese translation is ready on this device."))
+        }
+    }
+
+    @JavascriptInterface fun translate(id: String, text: String) {
+        if (text.isBlank()) {
+            call("onTranslation", JSONObject.quote(id), JSONObject.quote(""))
+            return
+        }
+        withPtTranslator { translator, error ->
+            if (translator == null) {
+                call("onTranslationError", JSONObject.quote(id),
+                    JSONObject.quote(error ?: "Portuguese translation is unavailable."))
+            } else {
+                translator.translate(text)
+                    .addOnSuccessListener { result ->
+                        call("onTranslation", JSONObject.quote(id), JSONObject.quote(result))
+                    }
+                    .addOnFailureListener { e ->
+                        call("onTranslationError", JSONObject.quote(id),
+                            JSONObject.quote(e.message ?: "Could not translate this reply."))
+                    }
+            }
+        }
+    }
+
     @JavascriptInterface fun getVoices() { refreshVoices() }
     fun refreshVoices() { val arr = JSONArray(); tts?.voices?.filter { it.locale.language == "en" }?.forEach { v -> arr.put(JSONObject().put("name", v.name).put("lang", v.locale.toLanguageTag())) }; call("onVoices", JSONObject.quote(arr.toString())) }
     @JavascriptInterface fun speak(id: String, text: String, rate: String, voiceName: String) { main.post { try { tts?.setSpeechRate(rate.toFloatOrNull() ?: 1f); tts?.voices?.firstOrNull { it.name == voiceName }?.let { tts?.voice = it }; tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) } catch (_: Exception) { call("onTtsDone", JSONObject.quote(id)) } } }
@@ -316,5 +371,5 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     @JavascriptInterface fun stopListening() { main.post { try { recognizer?.stopListening() } catch (_: Exception) {} } }
     @JavascriptInterface fun cancelListening() { main.post { listening = false; try { recognizer?.cancel() } catch (_: Exception) {} } }
     fun speechError(message: String) = call("onSpeechError", JSONObject.quote(message))
-    fun close() { try { recognizer?.destroy() } catch (_: Exception) {}; try { tts?.stop(); tts?.shutdown() } catch (_: Exception) {}; worker.shutdownNow(); engine.close() }
+    fun close() { try { recognizer?.destroy() } catch (_: Exception) {}; try { tts?.stop(); tts?.shutdown() } catch (_: Exception) {}; try { ptTranslator?.close() } catch (_: Exception) {}; ptTranslator = null; worker.shutdownNow(); engine.close() }
 }

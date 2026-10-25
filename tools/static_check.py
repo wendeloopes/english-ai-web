@@ -8,8 +8,9 @@ ok=True
 def chk(name,cond,info=''):
     global ok; ok&=bool(cond); print(('PASS ' if cond else 'FAIL ')+name+(' - '+info if info and not cond else ''))
 g=rd(A+'/build.gradle.kts')
-chk('gradle versionCode=4 / versionName=1.3','versionCode = 4' in g and 'versionName = "1.3"' in g)
+chk('gradle versionCode=5 / versionName=1.3.2','versionCode = 5' in g and 'versionName = "1.3.2"' in g)
 chk('litertlm dependency 0.18.0','litertlm-android:0.18.0' in g)
+chk('ML Kit translate dependency','com.google.mlkit:translate:17.0.3' in g)
 nb,en,ma=rd(K+'NativeBridge.kt'),rd(K+'LiteRtEngine.kt'),rd(K+'MainActivity.kt')
 chk('old memory check removed',not re.search(r'estimated minimum|requiredHeadroom|availMem',nb+en+ma))
 chk('safe import: backup + rollback','model.bak' in nb and 'previous model was restored' in nb)
@@ -18,6 +19,7 @@ chk('copy size verified','The copy was interrupted' in nb)
 chk('engine: maxNumTokens + cache + reuse','maxNumTokens' in en and 'litert-cache' in en and 'convoSystem' in en)
 chk('engine lifecycle: assign only after initialize; do not close failed candidate', 'candidate.initialize()\n        engine = candidate' in en and 'candidate.close()' not in en)
 chk('bridge: getInfo/getLastCrash/copyText/openUrl',all(x in nb for x in ['fun getInfo','fun getLastCrash','fun copyText','fun openUrl']))
+chk('bridge: on-device Portuguese translation',all(x in nb for x in ['fun ptEnsure','fun translate']))
 for f,t in (('NativeBridge.kt',nb),('LiteRtEngine.kt',en),('MainActivity.kt',ma)):
     t2=re.sub(r'//.*','',re.sub(r'"(?:\\.|[^"\\])*"','""',t)); chk('kotlin balanced braces/parens '+f,t2.count('{')==t2.count('}') and t2.count('(')==t2.count(')'))
 mf=rd(A+'/src/main/AndroidManifest.xml')
@@ -31,7 +33,7 @@ chk('html<->bridge: every Native.onX called from Kotlin is defined in JS',all(('
 refs=set(re.findall(r'(?:src|href)="([^"#:]+\.(?:png|svg|jpg))"',h)); miss=[r for r in refs if not os.path.exists(W+r) and not os.path.exists(os.path.join(R,r))]
 chk('local resources referenced by index.html exist (assets or repo root, copied by workflow)',not miss,str(miss))
 chk('orb loop protected (try/catch + global extLevel)','extLevel' in h and '}catch(e){}})(0);' in h)
-chk('Portuguese format + not-spoken split present','splitPt' in h and ('===' in h))
+chk('Portuguese format + not-spoken split present',"function splitPt(raw)" in h and "raw.indexOf('===')" in h and 'NativeBridge.translate' in h)
 # Additional packaging/workflow safeguards (these are static checks, not an Android build).
 try:
     manifest=json.load(open(os.path.join(R,'manifest.json'),encoding='utf-8'))
@@ -41,6 +43,6 @@ except Exception as e:
     chk('Web manifest valid JSON and packaged in native assets',False,str(e))
 workflow=rd(os.path.join(R,'.github/workflows/android-native.yml'))
 chk('workflow runs static checks before Gradle compile',workflow.find('python3 tools/static_check.py') >= 0 and workflow.find('python3 tools/static_check.py') < workflow.find('gradle assembleDebug'))
-chk('workflow verifies APK versionCode 4/versionName 1.3',"versionCode='4' versionName='1.3'" in workflow)
+chk('workflow verifies APK versionCode 5/versionName 1.3.2',"versionCode='5' versionName='1.3.2'" in workflow)
 chk('startup recovers backup after interrupted model import','backupModelFile.renameTo(modelFile)' in nb and 'previous model was restored after an interrupted update' in nb)
 print('\nRESULT:','ALL PASSED' if ok else 'FAILURES'); sys.exit(0 if ok else 1)
