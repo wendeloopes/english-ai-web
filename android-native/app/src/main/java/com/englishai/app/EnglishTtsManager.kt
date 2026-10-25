@@ -18,9 +18,10 @@ object EnglishTtsManager {
         return text.replace(Regex("\\s+"), " ").trim()
     }
 
-    fun greeting(userName: String): String {
+    fun greeting(userName: String, morning: Boolean = true): String {
         val safeName = sanitizeText(userName).take(24)
-        return if (safeName.isBlank()) "Good morning! Ready for a little English practice?"
-        else "Hi, $safeName! Good morning. Ready for a little English practice?"
+        val salutation = if (morning) "Good morning" else "Good evening"
+        return if (safeName.isBlank()) "$salutation! Ready for a little English practice?"
+        else "Hi, $safeName! $salutation. Ready for a little English practice?"
     }
 }
