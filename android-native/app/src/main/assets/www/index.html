@@ -195,6 +195,10 @@ select,input[type=range],.txt{background:#132844;color:#f3f7ff;border:1px solid 
 .emptyPage{padding:28px 18px;text-align:center;border:1px dashed #29466b;border-radius:18px;color:#91a7c8;font-size:13px;line-height:1.5}
 #savedList{display:grid;gap:9px}
 .pagefootnote{font-size:11px;line-height:1.5;color:#7189aa;padding:4px 2px}
+.modelpreset{text-align:left;width:100%;cursor:pointer;min-height:74px}
+.modelpreset .featureicon{font-size:12px;font-weight:800;letter-spacing:-.5px}
+.modelpreset.selected{border-color:#58a8ff;background:linear-gradient(110deg,#153b63,#10213a);box-shadow:0 0 0 1px #58a8ff55}
+.modelpreset .pill{display:inline-block;margin-left:5px;vertical-align:middle;font-size:9px;padding:4px 6px}
 @media(max-height:650px){#bottomNav{height:58px}.mainpage{padding-top:5px}.heroPanel{padding:16px}.lesson{min-height:130px}}
 @media(min-width:600px){.app{border-left:1px solid #1b3453;border-right:1px solid #1b3453}#bottomNav{left:24px;right:24px}.mainpage{padding-left:24px;padding-right:24px}}
 
@@ -309,7 +313,22 @@ select,input[type=range],.txt{background:#132844;color:#f3f7ff;border:1px solid 
     <button class="featurecard" id="modelsChoose"><span class="featureicon"><svg class="i" viewBox="0 0 24 24"><path d="M12 16V3M7 8l5-5 5 5M4 15v5h16v-5"/></svg></span><span class="featurecopy"><b>Selecionar arquivo do modelo</b><small>Escolha um arquivo de modelo compatível no dispositivo.</small></span><span class="chev">›</span></button>
     <button class="featurecard" id="modelsRemove"><span class="featureicon"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6M14 10v6"/></svg></span><span class="featurecopy"><b>Remover modelo local</b><small>Libera espaço; será necessário selecionar o arquivo novamente.</small></span><span class="chev">›</span></button>
   </div>
-  <div class="featurelist" id="localModelPresets" style="margin-top:14px"><h2 style="font-size:18px;margin:4px 0">Modelos locais conhecidos</h2><p class="pageintro">Selecione o perfil apenas para orientar a escolha do arquivo. Isso não baixa, converte nem garante compatibilidade do modelo.</p><select class="txt" id="localModelPreset"><option value="auto">Detectar pelo arquivo (recomendado)</option><option value="llama">Llama 3.2</option><option value="gemma">Gemma 2</option><option value="phi">Phi-3 Mini</option><option value="mistral">Mistral 7B</option></select><div class="actionline"><button class="btn g" id="choosePresetModel" type="button">Escolher arquivo local</button><a href="https://github.com/google-ai-edge/LiteRT-LM" target="_blank" rel="noopener" style="color:#a7d7ff;font-size:12px">Formatos compatíveis</a></div></div>
+  <div class="featurelist" id="localModelPresets" style="margin-top:14px">
+    <h2 style="font-size:18px;margin:4px 0">Modelos de IA</h2>
+    <p class="pageintro">Modelos locais para uso offline. Os tamanhos são estimativas da referência e variam conforme a versão e a quantização do arquivo.</p>
+    <select class="txt" id="localModelPreset" aria-label="Perfil de modelo" style="display:none"><option value="llama">Llama 3.2</option><option value="gemma">Gemma 2</option><option value="phi">Phi-3 Mini</option><option value="mistral">Mistral 7B</option><option value="auto">Detectar pelo arquivo</option></select>
+    <div id="modelPresetList" style="display:grid;gap:9px;margin-top:12px">
+      <button type="button" class="featurecard modelpreset selected" data-model-preset="llama" aria-pressed="true"><span class="featureicon">AI</span><span class="featurecopy"><b>Llama 3.2 <span class="pill">Atual · Recomendado</span></b><small>3.1 GB · Modelo local</small></span><span class="chev">✓</span></button>
+      <button type="button" class="featurecard modelpreset" data-model-preset="gemma" aria-pressed="false"><span class="featureicon">AI</span><span class="featurecopy"><b>Gemma 2</b><small>2.8 GB · Modelo local</small></span><span class="chev">›</span></button>
+      <button type="button" class="featurecard modelpreset" data-model-preset="phi" aria-pressed="false"><span class="featureicon">AI</span><span class="featurecopy"><b>Phi-3 Mini</b><small>1.7 GB · Modelo local</small></span><span class="chev">›</span></button>
+      <button type="button" class="featurecard modelpreset" data-model-preset="mistral" aria-pressed="false"><span class="featureicon">AI</span><span class="featurecopy"><b>Mistral 7B</b><small>4.1 GB · Modelo local</small></span><span class="chev">›</span></button>
+    </div>
+    <div style="display:grid;gap:9px;margin-top:16px">
+      <button class="btn" id="downloadStrongerModel" type="button">Baixar um novo modelo mais poderoso</button>
+      <button class="btn g" id="choosePresetModel" type="button">Carregar modelo existente</button>
+    </div>
+    <p class="pagefootnote">Escolher um perfil não baixa nem converte um modelo automaticamente. O arquivo precisa ser compatível com o motor LiteRT-LM instalado. Para usar Gemini, selecione o modo online abaixo e forneça sua chave de API; offline continua sendo o padrão.</p>
+  </div>
   <div class="featurelist" id="aiModePanel" style="margin-top:14px">
     <h2 style="font-size:18px;margin:4px 0">Modo de IA</h2>
     <p class="pageintro">Offline é o padrão. Online só é usado quando você selecionar explicitamente e fornecer uma chave de API.</p>
@@ -980,6 +999,16 @@ function refreshModelsPage(){
   $('modelsDescription').textContent=ok?'O modelo local está indicado como carregado.':'Selecione um arquivo local compatível ou ative o modo online de forma explícita.';
   $('moreVersion').textContent=($('ver')?.textContent||'English AI')+' · Conversas e preferências ficam no armazenamento local do app.';
 }
+function selectModelPreset(name){
+  const select=$('localModelPreset');if(select)select.value=name;
+  document.querySelectorAll('#modelPresetList [data-model-preset]').forEach(button=>{
+    const selected=button.dataset.modelPreset===name;
+    button.classList.toggle('selected',selected);button.setAttribute('aria-pressed',String(selected));
+    const mark=button.querySelector('.chev');if(mark)mark.textContent=selected?'✓':'›';
+  });
+}
+document.querySelectorAll('#modelPresetList [data-model-preset]').forEach(button=>button.addEventListener('click',()=>selectModelPreset(button.dataset.modelPreset)));
+$('downloadStrongerModel')?.addEventListener('click',()=>openUrl('https://github.com/google-ai-edge/LiteRT-LM'));
 $('choosePresetModel')?.addEventListener('click',()=>{try{if(NB&&typeof NativeBridge.pickModel==='function'){NativeBridge.pickModel();return}}catch(e){}$('file').click()});
 $('openChatGPTWeb')?.addEventListener('click',()=>openUrl('https://chatgpt.com/'));
 $('openClaudeWeb')?.addEventListener('click',()=>openUrl('https://claude.ai/new'));
