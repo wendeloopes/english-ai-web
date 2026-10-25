@@ -1063,13 +1063,8 @@ syncBottomNav(document.querySelector('.screen.on')?.id||'welcome');
     $('enhReview').onclick=()=>{const x=vocabItems.find(v=>!v.learned)||vocabItems[0];if(!x)return toast('Adicione palavras para revisar.');markReview(x);save();renderVocab();startLesson('Run a short spaced-repetition review for the English expression "'+x.word.replace(/["\\]/g,'')+'". Portuguese meaning: "'+(x.meaning||'not supplied').replace(/["\\]/g,'')+'". Ask me to recall the meaning, then show a natural example and ask me to use it in a sentence.')};
   }
 
-  // Add drawer quick access without removing the existing saved conversation list.
-  const drawer=$('drawer');
-  if(drawer&&!$('enhDrawerQuick')){
-    const q=document.createElement('div');q.id='enhDrawerQuick';q.className='drawerQuick';q.innerHTML='<button type="button" data-go="chat">Conversa</button><button type="button" data-go="lessons">Explorar aulas</button><button type="button" data-go="vocab">Biblioteca / Vocabulário</button><button type="button" data-go="settings">Configurações</button><button type="button" data-go="help">Ajuda</button><button type="button" data-go="exit">Sair</button>';
-    drawer.insertBefore(q,drawer.querySelector('#list'));
-    q.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{const id=b.dataset.go;closeAll();if(id==='settings'){$('sheet').classList.add('full-settings');panel('sheet',true)}else if(id==='help')toast('Ajuda: escolha uma aula, pratique no chat e salve palavras no vocabulário.');else if(id==='exit'){toast('Para sair, use o botão Voltar do Android.')}else{if(id==='chat'){stopAll();render()}go(id)}});
-  }
+  // The HTML already contains the single canonical seven-item drawer. Do not inject a second menu here.
+  // Drawer destinations are bound once below through #drawerQuick [data-dest].
 
   // Move the existing native Vosk download controls into the Plugins / Model Manager panel.
   const speech=$('voiceAssistantControls'),plugin=$('plug');
