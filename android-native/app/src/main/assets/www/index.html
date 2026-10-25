@@ -575,6 +575,17 @@ function saveRoutineSettings(){
 }
 $('saveRoutine').onclick=saveRoutineSettings;
 $('nameIn').value=S.name||'';$('nameIn').oninput=e=>{S.name=e.target.value.trim().slice(0,24);sv('echo.set',S);if(NB&&typeof NativeBridge.saveUserSettings==='function')saveRoutineSettings()};
+/* Sync native preferences after the WebView has initialized. Greet at most once per active window per day. */
+if(NB&&typeof NativeBridge.saveUserSettings==='function'){
+  saveRoutineSettings();
+  try{
+    if(NativeBridge.isWithinActiveRoutine()){
+      const now=new Date(), dateKey=now.getFullYear()+'-'+(now.getMonth()+1)+'-'+now.getDate();
+      const windowKey=now.getHours()<12?'morning':'evening', greetingKey='echo.greeted.'+dateKey+'.'+windowKey;
+      if(!ld(greetingKey,false)){NativeBridge.triggerGreeting();sv(greetingKey,true)}
+    }
+  }catch(e){}
+}
 
 $('nameIn').value=S.name||'';$('nameIn').oninput=e=>{S.name=e.target.value.trim().slice(0,24);sv('echo.set',S)};
 tg('tPt','pt');$('tPt').addEventListener('click',()=>{if(!S.pt){$('capPt').textContent='';return;} if(NB&&typeof NativeBridge.ptEnsure==='function'){ $('mstat').textContent='Preparing Portuguese subtitles…'; NativeBridge.ptEnsure(); restorePortugueseCaption(); }});
