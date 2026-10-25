@@ -210,6 +210,17 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
             call("onHotwordStatus", "false", JSONObject.quote("Microphone permission is required. Grant it in Android app settings, then enable voice activation again."))
             return
         }
+        if (Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            call("onHotwordStatus", "false", JSONObject.quote("Notifications must be enabled so Android can show the persistent microphone indicator. Allow notifications, then enable voice activation again."))
+            main.post {
+                try {
+                    val settingsIntent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    settingsIntent.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, activity.packageName)
+                    activity.startActivity(settingsIntent)
+                } catch (_: Exception) {}
+            }
+            return
+        }
         try {
             prefs.edit().putBoolean("hotwordEnabled", true).apply()
             val intent = Intent(activity, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_START)
