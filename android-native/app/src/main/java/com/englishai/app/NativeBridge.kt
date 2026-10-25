@@ -148,9 +148,27 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         return "v$v · RAM " + String.format(Locale.US, "%.1f", totalRam() / 1073741824.0) + " GB"
     }
     @Volatile private var unloaded = false
-    /** Called by the activity after the app stayed in the background for a while: frees the model's RAM. */
-    fun unloadForBackground() { worker.execute { if (modelFile.exists() && modelLoadFailure == null) { engine.close(); unloaded = true; modelLoadFailure = "The model is reloading. Wait for Model ready." } } }
-    fun reloadIfUnloaded() { if (unloaded) { unloaded = false; loadPath() } }
+    @Volatile private var foreground = true
+    private val lifecycleLock = Any()
+    /** Keep lifecycle transitions ordered with the delayed background-unload task. */
+    fun setForeground(isForeground: Boolean) {
+        val shouldReload = synchronized(lifecycleLock) {
+            foreground = isForeground
+            if (isForeground && unloaded) { unloaded = false; true } else false
+        }
+        if (shouldReload) loadPath()
+    }
+    /** Called after the app stayed in the background: free RAM only if it is still backgrounded. */
+    fun unloadForBackground() { worker.execute {
+        synchronized(lifecycleLock) {
+            if (!foreground && modelFile.exists() && modelLoadFailure == null) {
+                engine.close()
+                unloaded = true
+                modelLoadFailure = "The model is reloading. Wait for Model ready."
+            }
+        }
+    } }
+    fun reloadIfUnloaded() = setForeground(true)
     fun trimMemory() { worker.execute { engine.trimConversation() } }
     @JavascriptInterface fun copyText(text: String) { main.post { try { val cm = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager; cm.setPrimaryClip(android.content.ClipData.newPlainText("English Ai", text)) } catch (_: Exception) {} } }
     @JavascriptInterface fun openUrl(url: String) { main.post { try { if (url.startsWith("https://")) activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {} } }
