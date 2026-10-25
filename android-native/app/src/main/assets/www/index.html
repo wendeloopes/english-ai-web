@@ -574,7 +574,38 @@ function saveRoutineSettings(){
     $('routineStatus').textContent='Routine saved on this phone.';
   }else $('routineStatus').textContent='Saved in this app. Native schedule sync is available in the Android build.';
 }
+
 $('saveRoutine').onclick=saveRoutineSettings;
+/* Real Android alarm + explicit opt-in hotword service. */
+(function installVoiceAssistantControls(){
+  const box=document.createElement('section');
+  box.id='voiceAssistantControls';
+  box.style.cssText='margin:14px 0;padding:14px;border:1px solid var(--line,#333);border-radius:16px;background:var(--panel,#17191f);display:grid;gap:12px';
+  box.innerHTML='<div style="font-weight:700">Voice assistant</div>'+
+    '<label style="display:flex;align-items:center;gap:10px"><input id="morningAlarmToggle" type="checkbox" style="width:20px;height:20px"> <span><b>Daily alarm · 04:40</b><br><small>Speak a morning greeting and show a notification.</small></span></label>'+
+    '<div id="morningAlarmStatus" style="font-size:12px;opacity:.8">Alarm is off.</div>'+
+    '<div style="height:1px;background:var(--line,#333)"></div>'+
+    '<label style="display:flex;align-items:center;gap:10px"><input id="hotwordToggle" type="checkbox" style="width:20px;height:20px"> <span><b>“Hi, English AI!” activation</b><br><small>Uses the microphone while a permanent Android notification is visible.</small></span></label>'+
+    '<div id="hotwordStatus" style="font-size:12px;opacity:.8">Voice activation is off.</div>'+
+    '<small style="opacity:.72">Hotword detection depends on Android speech recognition and battery settings. It is not covert listening; turn it off here or from the notification.</small>';
+  $('saveRoutine').insertAdjacentElement('afterend',box);
+  const alarm=$('morningAlarmToggle'),hotword=$('hotwordToggle');
+  if(NB){
+    try{alarm.checked=!!NativeBridge.isMorningAlarmEnabled()}catch(e){}
+    try{hotword.checked=!!NativeBridge.isHotwordEnabled()}catch(e){}
+  }
+  alarm.addEventListener('change',()=>{
+    if(!NB||typeof NativeBridge.setMorningAlarm!=='function'){alarm.checked=false;$('morningAlarmStatus').textContent='This control requires the native Android build.';return}
+    NativeBridge.setMorningAlarm(alarm.checked);
+  });
+  hotword.addEventListener('change',()=>{
+    if(!NB||typeof NativeBridge.setHotwordEnabled!=='function'){hotword.checked=false;$('hotwordStatus').textContent='This control requires the native Android build.';return}
+    NativeBridge.setHotwordEnabled(hotword.checked);
+  });
+  window.Native.onMorningAlarmStatus=(enabled,message)=>{$('morningAlarmStatus').textContent=message|| (enabled?'Alarm enabled.':'Alarm disabled.');alarm.checked=!!enabled};
+  window.Native.onHotwordStatus=(enabled,message)=>{$('hotwordStatus').textContent=message|| (enabled?'Voice activation is on.':'Voice activation is off.');hotword.checked=!!enabled};
+})();
+
 $('nameIn').value=S.name||'';$('nameIn').oninput=e=>{S.name=e.target.value.trim().slice(0,24);sv('echo.set',S);if(NB&&typeof NativeBridge.saveUserSettings==='function')saveRoutineSettings()};
 /* Sync native preferences after the WebView has initialized. Greet at most once per active window per day. */
 if(NB&&typeof NativeBridge.saveUserSettings==='function'){
