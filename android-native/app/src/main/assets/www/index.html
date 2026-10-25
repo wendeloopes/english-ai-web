@@ -600,6 +600,12 @@ $('saveRoutine').onclick=saveRoutineSettings;
   box.id='voiceAssistantControls';
   box.style.cssText='margin:14px 0;padding:14px;border:1px solid var(--line,#333);border-radius:16px;background:var(--panel,#17191f);display:grid;gap:12px';
   box.innerHTML='<div style="font-weight:700">Voice assistant</div>'+
+    '<div style="padding:10px;border:1px solid var(--line,#333);border-radius:12px;display:grid;gap:8px">'+
+      '<b>Offline English speech recognition</b>'+
+      '<small>Install a separate on-device speech engine (~40 MB, one-time download). After installation, voice practice works offline and does not depend on Android/Google Speech Recognition.</small>'+
+      '<div id="offlineSpeechStatus" style="font-size:12px;opacity:.85">Checking offline speech engine…</div>'+
+      '<button class="btn" id="offlineSpeechDownload" type="button">Download offline speech engine</button>'+
+    '</div>'+
     '<label style="display:flex;align-items:center;gap:10px"><input id="morningAlarmToggle" type="checkbox" style="width:20px;height:20px"> <span><b>Daily alarm · 04:40</b><br><small>Speak a morning greeting and show a notification.</small></span></label>'+
     '<div id="morningAlarmStatus" style="font-size:12px;opacity:.8">Alarm is off.</div>'+
     '<div style="height:1px;background:var(--line,#333)"></div>'+
@@ -608,10 +614,28 @@ $('saveRoutine').onclick=saveRoutineSettings;
     '<small style="opacity:.72">Hotword detection depends on Android speech recognition and battery settings. It is not covert listening; turn it off here or from the notification.</small>';
   $('saveRoutine').insertAdjacentElement('afterend',box);
   const alarm=$('morningAlarmToggle'),hotword=$('hotwordToggle');
+  const offlineBtn=$('offlineSpeechDownload'),offlineStatus=$('offlineSpeechStatus');
   if(NB){
     try{alarm.checked=!!NativeBridge.isMorningAlarmEnabled()}catch(e){}
     try{hotword.checked=!!NativeBridge.isHotwordEnabled()}catch(e){}
-  }
+    try{
+      if(NativeBridge.isOfflineSpeechModelInstalled()){
+        offlineStatus.textContent='Offline English speech engine is installed and ready.';
+        offlineBtn.textContent='Downloaded ✓';offlineBtn.disabled=true;
+      }else offlineStatus.textContent='Not installed. Download once while connected to the internet.';
+    }catch(e){offlineStatus.textContent='Available in the native Android app.'}
+  }else{offlineStatus.textContent='This feature requires the native Android app.';offlineBtn.disabled=true}
+  offlineBtn.addEventListener('click',()=>{
+    if(!NB||typeof NativeBridge.downloadOfflineSpeechModel!=='function'){offlineStatus.textContent='This feature requires the native Android app.';return}
+    offlineBtn.disabled=true;offlineStatus.textContent='Starting download…';
+    NativeBridge.downloadOfflineSpeechModel();
+  });
+  window.Native.onOfflineSpeechModelStatus=(ok,message)=>{
+    offlineStatus.textContent=message||'Offline speech status updated.';
+    if(/installed and ready|already installed/i.test(offlineStatus.textContent)){
+      offlineBtn.textContent='Downloaded ✓';offlineBtn.disabled=true;
+    }else offlineBtn.disabled=false;
+  };
   alarm.addEventListener('change',()=>{
     if(!NB||typeof NativeBridge.setMorningAlarm!=='function'){alarm.checked=false;$('morningAlarmStatus').textContent='This control requires the native Android build.';return}
     NativeBridge.setMorningAlarm(alarm.checked);
