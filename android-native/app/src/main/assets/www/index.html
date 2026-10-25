@@ -505,6 +505,12 @@ if (window.NativeBridge) {
   pump = function(){ if(talking||!q.length)return; const s=q.shift(); talking=true; nativeSpeakingText=s; nativeSpeakingId=String(Date.now())+String(Math.random()); setState('speaking'); showCap(s,-1); NativeBridge.speak(nativeSpeakingId,s,String(S.rate),String(S.voice||'')); };
   stopAll = function(){ nativeTranslationId=''; nativeTranslationBubble=null; gen++; q=[]; talking=false; busy=false; NativeBridge.cancelGenerate(); NativeBridge.stopSpeaking(); if(nativeListening)NativeBridge.cancelListening(); nativeListening=false; rec=null; persist(); setState('idle'); };
   listen = async function(){ if(state==='listening')return; stopAll(); heard=''; nativeListening=true; setState('listening'); cap('<span class="you">Say something in English…</span>'); NativeBridge.startListening(); };
+  window.Native.onHotwordActivated = () => {
+    if(state==='listening') return;
+    if(state==='thinking'||state==='speaking') stopAll();
+    go('voice');
+    setTimeout(()=>{ if(state==='idle') listen(); }, 500);
+  };
   sendVoice = function(){ if(nativeListening)NativeBridge.stopListening(); };
   const choose=$('file').parentElement.querySelector('label[for="file"]'); if(choose)choose.onclick=e=>{e.preventDefault();NativeBridge.pickModel();};
   $('file').onchange=()=>{};
