@@ -57,8 +57,8 @@ class MainActivity : ComponentActivity() {
     }
     private val idle = android.os.Handler(android.os.Looper.getMainLooper())
     private val unloadTask = Runnable { if (::bridge.isInitialized) bridge.unloadForBackground() }
-    override fun onStop() { super.onStop(); idle.postDelayed(unloadTask, 3 * 60 * 1000L) }   // free RAM after 3 min in background
-    override fun onStart() { super.onStart(); idle.removeCallbacks(unloadTask); if (::bridge.isInitialized) bridge.reloadIfUnloaded() }
+    override fun onStop() { super.onStop(); if (::bridge.isInitialized) bridge.setForeground(false); idle.postDelayed(unloadTask, 3 * 60 * 1000L) }   // free RAM after 3 min in background
+    override fun onStart() { super.onStart(); idle.removeCallbacks(unloadTask); if (::bridge.isInitialized) bridge.setForeground(true) }
     override fun onTrimMemory(level: Int) { super.onTrimMemory(level); if (level >= 15 && ::bridge.isInitialized) bridge.trimMemory() }
     override fun onBackPressed() { web.evaluateJavascript("window.Native && window.Native.onBack ? window.Native.onBack() : false") { handled -> if (handled != "true") finish() } }
     override fun onDestroy() { if (::bridge.isInitialized) bridge.close(); if (::web.isInitialized) web.destroy(); super.onDestroy() }
