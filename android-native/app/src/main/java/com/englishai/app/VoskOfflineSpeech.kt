@@ -203,7 +203,7 @@ class VoskOfflineSpeech(
                     // Some microphones/models never signal an endpoint. Finalize after
                     // sustained silence following actual voice activity, but don't time out
                     // while the learner is still speaking.
-                    if (speechDetected && now - lastVoiceAt >= 1800L) {
+                    if (listening && speechDetected && now - lastVoiceAt >= 1800L) {
                         endpointText = JSONObject(activeRecognizer.finalResult).optString("text", "").trim()
                         listening = false
                     }
