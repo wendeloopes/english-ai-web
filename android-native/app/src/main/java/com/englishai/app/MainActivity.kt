@@ -23,6 +23,26 @@ class MainActivity : ComponentActivity() {
     private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) bridge.startListeningGranted() else bridge.speechError("Microphone permission is required for voice practice.")
     }
+    private val firstLaunchPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+        if (results[Manifest.permission.RECORD_AUDIO] == true) {
+            // Notifications are optional for foreground practice, but required for reliable hotword service.
+            if (results[Manifest.permission.POST_NOTIFICATIONS] != true && android.os.Build.VERSION.SDK_INT >= 33) {
+                bridge.speechError("Allow notifications to keep voice activation available in the background.")
+            }
+        }
+    }
+    private fun requestFirstLaunchPermissions() {
+        val prefs = getSharedPreferences("english_ai_user_settings", MODE_PRIVATE)
+        if (prefs.getBoolean("firstLaunchPermissionsAsked", false)) return
+        prefs.edit().putBoolean("firstLaunchPermissionsAsked", true).apply()
+        val needed = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
+            needed.add(Manifest.permission.RECORD_AUDIO)
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            needed.add(Manifest.permission.POST_NOTIFICATIONS)
+        if (needed.isNotEmpty()) firstLaunchPermissions.launch(needed.toTypedArray())
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingHotwordActivation = intent?.action == HotwordListeningService.ACTION_HOTWORD_DETECTED
@@ -51,6 +71,7 @@ class MainActivity : ComponentActivity() {
                 // Avoid loading the same multi-GB model twice during startup.
                 bridge.refreshVoices()
                 pageReady = true
+                requestFirstLaunchPermissions()
                 dispatchPendingHotwordActivation()
             }
         }
