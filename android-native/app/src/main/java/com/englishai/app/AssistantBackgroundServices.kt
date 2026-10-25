@@ -42,7 +42,7 @@ class MorningAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         scheduleNext(context, 4, 40)
         val service = Intent(context, AlarmGreetingService::class.java)
-        if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(service) else context.startService(service)
+        try { if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(service) else context.startService(service) } catch (_: Exception) { /* Keep the notification available if Android blocks background service start. */ }
         ensureAssistantChannels(context)
         val notification = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, ALARM_CHANNEL) else Notification.Builder(context)
         context.getSystemService(NotificationManager::class.java).notify(
