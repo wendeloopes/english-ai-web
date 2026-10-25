@@ -1114,7 +1114,7 @@ syncBottomNav(document.querySelector('.screen.on')?.id||'welcome');
     else if(dest==='plug')panel('plug',true);
     else if(dest==='settings')panel('sheet',true);
     else if(dest==='help'){toast('Ajuda: use Aulas para praticar, Modelos de IA para escolher o modo e Plugins / Fontes para exemplos.');panel('plug',true)}
-    else if(dest==='exit'){if(confirm('Deseja sair do English AI?')){toast('Use o botão Voltar do Android para sair com segurança.')}}
+    else if(dest==='exit'){if(confirm('Deseja sair do English AI?')){try{if(window.NativeBridge&&typeof NativeBridge.exitApp==='function')NativeBridge.exitApp();else toast('Use o botão Voltar do Android para sair com segurança.')}catch(e){toast('Use o botão Voltar do Android para sair com segurança.')}}}
   }));
   // Practical phrase search: local examples work offline; Reverso Context is an optional external source.
   const phrases=[
