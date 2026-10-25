@@ -8,7 +8,7 @@ ok=True
 def chk(name,cond,info=''):
     global ok; ok&=bool(cond); print(('PASS ' if cond else 'FAIL ')+name+(' - '+info if info and not cond else ''))
 g=rd(A+'/build.gradle.kts')
-chk('gradle versionCode=5 / versionName=1.3.2','versionCode = 5' in g and 'versionName = "1.3.2"' in g)
+chk('gradle versionCode=6 / versionName=1.3.3','versionCode = 6' in g and 'versionName = "1.3.3"' in g)
 chk('litertlm dependency 0.18.0','litertlm-android:0.18.0' in g)
 chk('ML Kit translate dependency','com.google.mlkit:translate:17.0.3' in g)
 nb,en,ma=rd(K+'NativeBridge.kt'),rd(K+'LiteRtEngine.kt'),rd(K+'MainActivity.kt')
@@ -34,6 +34,7 @@ refs=set(re.findall(r'(?:src|href)="([^"#:]+\.(?:png|svg|jpg))"',h)); miss=[r fo
 chk('local resources referenced by index.html exist (assets or repo root, copied by workflow)',not miss,str(miss))
 chk('orb loop protected (try/catch + global extLevel)','extLevel' in h and '}catch(e){}})(0);' in h)
 chk('Portuguese format + not-spoken split present',"function splitPt(raw)" in h and "raw.indexOf('===')" in h and 'NativeBridge.translate' in h)
+chk('Portuguese fallback remains active in native mode',"ai.pt=S.pt?sp.pt:''" in h and 'Portuguese subtitles fallback' in h and 'Preparing Portuguese subtitles' in h)
 # Additional packaging/workflow safeguards (these are static checks, not an Android build).
 try:
     manifest=json.load(open(os.path.join(R,'manifest.json'),encoding='utf-8'))
@@ -43,6 +44,6 @@ except Exception as e:
     chk('Web manifest valid JSON and packaged in native assets',False,str(e))
 workflow=rd(os.path.join(R,'.github/workflows/android-native.yml'))
 chk('workflow runs static checks before Gradle compile',workflow.find('python3 tools/static_check.py') >= 0 and workflow.find('python3 tools/static_check.py') < workflow.find('gradle assembleDebug'))
-chk('workflow verifies APK versionCode 5/versionName 1.3.2',"versionCode='5' versionName='1.3.2'" in workflow)
+chk('workflow verifies APK versionCode 6/versionName 1.3.3',"versionCode='6' versionName='1.3.3'" in workflow)
 chk('startup recovers backup after interrupted model import','backupModelFile.renameTo(modelFile)' in nb and 'previous model was restored after an interrupted update' in nb)
 print('\nRESULT:','ALL PASSED' if ok else 'FAILURES'); sys.exit(0 if ok else 1)
