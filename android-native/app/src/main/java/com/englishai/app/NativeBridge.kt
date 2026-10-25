@@ -32,6 +32,15 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     private val userSettings = UserSettings(activity)
     private var tts: TextToSpeech? = null
     private var recognizer: SpeechRecognizer? = null
+    private val offlineSpeech = VoskOfflineSpeech(
+        activity,
+        { ok, message -> call("onOfflineSpeechModelStatus", ok.toString(), JSONObject.quote(message)) },
+        { call("onSpeechReady") },
+        { call("onSpeechStarted") },
+        { text -> call("onSpeechPartial", JSONObject.quote(text)) },
+        { text -> call("onSpeechEnd", JSONObject.quote(text)) },
+        { message -> call("onSpeechError", JSONObject.quote(message)) }
+    )
     @Volatile private var ptTranslator: Translator? = null
     private val ptLock = Any()
     @Volatile private var cancelled = false
@@ -412,6 +421,8 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     fun refreshVoices() { val arr = JSONArray(); tts?.voices?.filter { it.locale.language == "en" }?.forEach { v -> arr.put(JSONObject().put("name", v.name).put("lang", v.locale.toLanguageTag())) }; call("onVoices", JSONObject.quote(arr.toString())) }
     @JavascriptInterface fun speak(id: String, text: String, rate: String, voiceName: String) { main.post { try { val clean = EnglishTtsManager.sanitizeText(text); if (clean.isBlank()) { call("onTtsDone", JSONObject.quote(id)); return@post }; tts?.language = Locale.US; tts?.setSpeechRate(rate.toFloatOrNull() ?: 1f); tts?.voices?.firstOrNull { it.name == voiceName && it.locale.language == "en" }?.let { tts?.voice = it }; tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, id) } catch (_: Exception) { call("onTtsDone", JSONObject.quote(id)) } } }
     @JavascriptInterface fun stopSpeaking() { main.post { tts?.stop() } }
+    @JavascriptInterface fun downloadOfflineSpeechModel() { offlineSpeech.downloadModel() }
+    @JavascriptInterface fun isOfflineSpeechModelInstalled(): Boolean = offlineSpeech.isInstalled()
     @JavascriptInterface fun startListening() { main.post { requestMic() } }
     fun startListeningGranted() {
         main.post {
@@ -422,6 +433,16 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
             }
             if (listening || listeningStartupPending) return@post
             speechDisconnectRetries = 0
+            // Prefer the separately installed Vosk engine. It does not use Android's broken
+            // Speech Recognition service and never sends audio off-device.
+            if (offlineSpeech.isInstalled()) {
+                try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) {}
+                recognizer = null
+                try { tts?.stop() } catch (_: Exception) {}
+                listeningStartupPending = false
+                offlineSpeech.start()
+                return@post
+            }
             if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
                 call("onSpeechError", JSONObject.quote("No speech recognition service is available. Check Android's Speech Recognition settings."))
                 return@post
@@ -516,8 +537,15 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
             call("onSpeechError", JSONObject.quote(e.message ?: "Could not start microphone."))
         }
     }
-    @JavascriptInterface fun stopListening() { main.post { try { recognizer?.stopListening() } catch (_: Exception) {} } }
-    @JavascriptInterface fun cancelListening() { main.post { listening = false; listeningStartupPending = false; try { recognizer?.cancel() } catch (_: Exception) {} } }
+    @JavascriptInterface fun stopListening() { main.post {
+        if (offlineSpeech.isInstalled()) offlineSpeech.stop(false)
+        else try { recognizer?.stopListening() } catch (_: Exception) {}
+    } }
+    @JavascriptInterface fun cancelListening() { main.post {
+        listening = false; listeningStartupPending = false
+        if (offlineSpeech.isInstalled()) offlineSpeech.stop(true)
+        try { recognizer?.cancel() } catch (_: Exception) {}
+    } }
     fun speechError(message: String) = call("onSpeechError", JSONObject.quote(message))
-    fun close() { try { recognizer?.destroy() } catch (_: Exception) {}; try { tts?.stop(); tts?.shutdown() } catch (_: Exception) {}; try { ptTranslator?.close() } catch (_: Exception) {}; ptTranslator = null; worker.shutdownNow(); engine.close() }
+    fun close() { offlineSpeech.close(); try { recognizer?.destroy() } catch (_: Exception) {}; try { tts?.stop(); tts?.shutdown() } catch (_: Exception) {}; try { ptTranslator?.close() } catch (_: Exception) {}; ptTranslator = null; worker.shutdownNow(); engine.close() }
 }
