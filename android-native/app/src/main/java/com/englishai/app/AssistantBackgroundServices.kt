@@ -10,6 +10,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.media.ToneGenerator
 import android.os.PowerManager
 import android.os.Build
@@ -21,6 +24,9 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Calendar
 import java.util.Locale
+import org.json.JSONObject
+import org.vosk.Model
+import org.vosk.Recognizer
 
 private const val ASSISTANT_CHANNEL = "english_ai_assistant"
 private const val ALARM_CHANNEL = "english_ai_alarm"
@@ -121,6 +127,11 @@ class HotwordListeningService : Service() {
     private var active = false
     private var restarting = false
     private var activationHandled = false
+    @Volatile private var voskActive = false
+    @Volatile private var voskRecorder: AudioRecord? = null
+    @Volatile private var voskModel: Model? = null
+    @Volatile private var voskRecognizer: Recognizer? = null
+    @Volatile private var voskThread: Thread? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -148,13 +159,91 @@ class HotwordListeningService : Service() {
     private fun pauseRecognition() {
         active = false
         restarting = false
+        stopVoskHotword()
         try { recognizer?.cancel() } catch (_: Exception) {}
         try { recognizer?.destroy() } catch (_: Exception) {}
         recognizer = null
     }
 
+    /**
+     * Prefer the app-managed Vosk model for hotword detection. Its constrained grammar
+     * explicitly contains the activation phrase and runs entirely on-device.
+     */
+    private fun startVoskHotword() {
+        if (!active || voskActive) return
+        val modelDir = java.io.File(filesDir, "vosk-model-en-us")
+        if (!java.io.File(modelDir, "am").isDirectory ||
+            !java.io.File(modelDir, "conf").isDirectory ||
+            !java.io.File(modelDir, "graph").isDirectory) return
+        voskActive = true
+        voskThread = Thread({
+            var audio: AudioRecord? = null
+            var model: Model? = null
+            var grammarRecognizer: Recognizer? = null
+            try {
+                model = Model(modelDir.absolutePath)
+                voskModel = model
+                val grammar = """["hi english ai","hey english ai","hello english ai","hi english eye","hey english eye","hello english eye","[unk]"]"""
+                grammarRecognizer = Recognizer(model, 16000.0f, grammar)
+                voskRecognizer = grammarRecognizer
+                val minBuffer = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+                check(minBuffer > 0) { "Could not initialize offline microphone audio." }
+                audio = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuffer, 8192))
+                voskRecorder = audio
+                check(audio.state == AudioRecord.STATE_INITIALIZED) { "Offline microphone could not be initialized." }
+                audio.startRecording()
+                val buffer = ShortArray(4096)
+                while (active && voskActive) {
+                    val count = audio.read(buffer, 0, buffer.size)
+                    if (count <= 0) continue
+                    val bytes = ByteArray(count * 2)
+                    for (i in 0 until count) {
+                        val sample = buffer[i].toInt()
+                        bytes[i * 2] = (sample and 0xff).toByte()
+                        bytes[i * 2 + 1] = (sample shr 8).toByte()
+                    }
+                    val json = if (grammarRecognizer.acceptWaveForm(bytes, bytes.size))
+                        grammarRecognizer.result else grammarRecognizer.partialResult
+                    val text = JSONObject(json).optString(if (json == grammarRecognizer.result) "text" else "partial", "").trim()
+                    if (text.isNotBlank()) {
+                        val bundle = android.os.Bundle().apply {
+                            putStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf(text))
+                        }
+                        checkPhrase(bundle, json == grammarRecognizer.result)
+                    }
+                }
+            } catch (_: Exception) {
+                // Do not silently switch this Vosk path to cloud recognition.
+                if (active && voskActive) postOfflineSpeechUnavailable()
+            } finally {
+                voskActive = false
+                try { audio?.stop() } catch (_: Exception) {}
+                try { audio?.release() } catch (_: Exception) {}
+                try { grammarRecognizer?.close() } catch (_: Exception) {}
+                try { model?.close() } catch (_: Exception) {}
+                if (voskRecorder === audio) voskRecorder = null
+                if (voskRecognizer === grammarRecognizer) voskRecognizer = null
+                if (voskModel === model) voskModel = null
+                voskThread = null
+            }
+        }, "EnglishAI-Vosk-Hotword").apply { isDaemon = true; start() }
+    }
+
+    private fun stopVoskHotword() {
+        voskActive = false
+        try { voskRecorder?.stop() } catch (_: Exception) {}
+    }
+
     private fun startRecognition() {
         if (!active || restarting) return
+        val voskModelDir = java.io.File(filesDir, "vosk-model-en-us")
+        if (java.io.File(voskModelDir, "am").isDirectory &&
+            java.io.File(voskModelDir, "conf").isDirectory &&
+            java.io.File(voskModelDir, "graph").isDirectory) {
+            startVoskHotword()
+            return
+        }
         if (Build.VERSION.SDK_INT < 31 || !SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
             ensureAssistantChannels(this)
             val n = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, ASSISTANT_CHANNEL) else Notification.Builder(this)
@@ -231,6 +320,7 @@ class HotwordListeningService : Service() {
             }
         } catch (_: Exception) {}
         restarting = true
+        stopVoskHotword()
         try { recognizer?.cancel() } catch (_: Exception) {}
         try { recognizer?.destroy() } catch (_: Exception) {}
         recognizer = null
@@ -294,6 +384,7 @@ class HotwordListeningService : Service() {
     override fun onDestroy() {
         active = false
         getSharedPreferences("english_ai_user_settings", MODE_PRIVATE).edit().putBoolean("hotwordEnabled", false).apply()
+        stopVoskHotword()
         try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) {}
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
