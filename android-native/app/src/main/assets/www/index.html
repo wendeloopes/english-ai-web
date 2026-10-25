@@ -566,6 +566,7 @@ let routines=Object.assign({},routineDefaults,ld('echo.routines',{}));
 for(const k of ['morningStart','morningEnd','eveningStart','eveningEnd','interactionMode'])$(k).value=routines[k];
 function saveRoutineSettings(){
   for(const k of ['morningStart','morningEnd','eveningStart','eveningEnd','interactionMode'])routines[k]=$(k).value;
+  S.hands=routines.interactionMode==='continuous';sv('echo.set',S);
   sv('echo.routines',routines);
   const data=JSON.stringify({userName:(S.name||'').trim(),routines,interactionMode:routines.interactionMode});
   if(NB&&typeof NativeBridge.saveUserSettings==='function'){
