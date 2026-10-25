@@ -34,6 +34,7 @@ class VoskOfflineSpeech(
     private val modelDir = File(context.filesDir, "vosk-model-en-us")
     private val zipFile = File(context.filesDir, "vosk-model-en-us.zip")
     private val tempDir = File(context.filesDir, "vosk-model-en-us.tmp")
+    @Volatile private var downloading = false
     @Volatile private var listening = false
     @Volatile private var cancelled = false
     @Volatile private var recorder: AudioRecord? = null
@@ -45,11 +46,16 @@ class VoskOfflineSpeech(
 
     private fun ui(block: () -> Unit) = main.post(block)
 
-    fun downloadModel() {
+    @Synchronized fun downloadModel() {
+        if (downloading) {
+            ui { status(false, "Downloading offline English speech model… already in progress.") }
+            return
+        }
         if (isInstalled()) {
             ui { status(true, "Offline English speech model is already installed (about 40 MB).") }
             return
         }
+        downloading = true
         io.execute {
             try {
                 tempDir.deleteRecursively()
@@ -122,6 +128,8 @@ class VoskOfflineSpeech(
                 zipFile.delete()
                 tempDir.deleteRecursively()
                 ui { status(false, e.message ?: "Could not download the offline English speech model.") }
+            } finally {
+                downloading = false
             }
         }
     }
