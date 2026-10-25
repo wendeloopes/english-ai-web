@@ -46,7 +46,7 @@ speech_match=re.search(r'function speechText\(s\)\s*\{[\s\S]*?\n\}',h)
 chk('speech queue strips Portuguese segment and UI labels',bool(speech_match))
 chk('streaming chat is autosaved with debounce and flushed on app hide', 'const schedulePersist=()=>{clearTimeout(persistTimer);persistTimer=setTimeout(()=>{persistTimer=0;persist()},300)};' in h and 'window.addEventListener(\'pagehide\',flushPersist)' in h and "if(document.hidden)flushPersist()" in h and 'schedulePersist();' in h)
 chk('chat history is saved before generation and on completion or error', "c.msgs.push({r:'me',t:text})" in h and "c.msgs.push(ai);persist();" in h and 'catch(err){busy=false;if(alive())setState(\'idle\');logErr(\'model\',(err&&err.message)||err);persist();return}' in h and 'persist();if(!alive())return;' in h)
-chk('quota failure warns user without silently truncating conversation history', "const persist=()=>{if(sv('echo.chats',chats)){sv('echo.cur',curId);return true}" in h and "logErr('storage-quota',msg)" in h and 'slice(0,40)' not in h and 'slice(-60)' not in h and "t:String(m.t||'').slice(0,2000)" not in h)
+chk('quota failure warns user without silently truncating conversation history', 'storage-quota' in h and 'O armazenamento está cheio' in h and 'slice(0,40)' not in h and 'slice(-60)' not in h and 'slice(0,2000)' not in h)
 if speech_match:
     test_js = speech_match.group(0) + r"""
 const assert = require('assert');
