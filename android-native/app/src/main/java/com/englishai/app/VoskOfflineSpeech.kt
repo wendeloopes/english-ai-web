@@ -62,9 +62,10 @@ class VoskOfflineSpeech(
                 zipFile.delete()
                 ui { status(false, "Downloading offline English speech model… 0%") }
                 val connection = (URL("https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip").openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 20000
-                    readTimeout = 30000
+                    connectTimeout = 15000
+                    readTimeout = 60000
                     instanceFollowRedirects = true
+                    useCaches = false
                     requestMethod = "GET"
                 }
                 try {
@@ -73,9 +74,12 @@ class VoskOfflineSpeech(
                     val length = connection.contentLengthLong
                     connection.inputStream.use { input ->
                         FileOutputStream(zipFile).use { output ->
-                            val buffer = ByteArray(64 * 1024)
+                            // Larger buffered reads reduce per-read overhead on mobile storage and networks.
+                            val buffer = ByteArray(256 * 1024)
                             var total = 0L
-                            var last = -1
+                            var lastReportedPercent = -1
+                            var lastReportedAt = System.nanoTime()
+                            var lastReportedBytes = 0L
                             while (true) {
                                 val n = input.read(buffer)
                                 if (n < 0) break
@@ -83,9 +87,17 @@ class VoskOfflineSpeech(
                                 total += n
                                 if (length > 0) {
                                     val pct = (total * 100 / length).toInt()
-                                    if (pct != last) {
-                                        last = pct
-                                        ui { status(false, "Downloading offline English speech model… $pct%") }
+                                    val now = System.nanoTime()
+                                    if (pct != lastReportedPercent && (pct == 100 || now - lastReportedAt >= 250_000_000L)) {
+                                        val elapsedSeconds = ((now - lastReportedAt) / 1_000_000_000.0).coerceAtLeast(0.001)
+                                        val speedMBs = (total - lastReportedBytes) / elapsedSeconds / (1024.0 * 1024.0)
+                                        val remainingMB = (length - total).coerceAtLeast(0L) / (1024.0 * 1024.0)
+                                        val etaSeconds = if (speedMBs > 0.05) (remainingMB / speedMBs).toInt() else -1
+                                        val eta = if (etaSeconds >= 0) " · ~${etaSeconds}s left" else ""
+                                        lastReportedPercent = pct
+                                        lastReportedAt = now
+                                        lastReportedBytes = total
+                                        ui { status(false, "Downloading offline English speech model… $pct% · ${"%.1f".format(java.util.Locale.US, speedMBs)} MB/s$eta") }
                                     }
                                 }
                             }
@@ -106,7 +118,7 @@ class VoskOfflineSpeech(
                             if (entry.isDirectory) out.mkdirs() else {
                                 out.parentFile?.mkdirs()
                                 FileOutputStream(out).use { output ->
-                                    val buffer = ByteArray(32 * 1024)
+                                    val buffer = ByteArray(256 * 1024)
                                     while (true) {
                                         val count = zip.read(buffer)
                                         if (count < 0) break
