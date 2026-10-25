@@ -293,6 +293,7 @@ function speechText(s){
   s=String(s||'').split(/\n\s*={2,}\s*\n|\s+={2,}\s*/)[0];
   s=s.replace(/<[^>]*>/g,' ').replace(/[*#_`>]/g,' ');
   s=s.replace(/^\s*(?:(?:english\s*(?:ai|ia|reply|response)|assistant)\s*[:：-]\s*)+/i,'');
+  s=s.replace(/\s+([,.!?;:])/g,'$1');
   s=s.replace(/\s+/g,' ').trim();
   return s;
 }
