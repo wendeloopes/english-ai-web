@@ -842,7 +842,8 @@ const MAIN_TABS=['chat','lessons','vocab','more'];
 function syncBottomNav(id){
   const nav=$('bottomNav');if(!nav)return;
   nav.hidden=!id||id==='splash'||id==='welcome';
-  nav.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===(id==='voice'?'chat':id)));
+  const activeKey=MAIN_TABS.includes(id)?id:(id==='voice'?'chat':(['saved','models'].includes(id)?'more':id));
+  nav.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===activeKey));
 }
 const originalGo=go;
 go=function(id){
@@ -855,7 +856,7 @@ go=function(id){
 };
 document.querySelectorAll('#bottomNav [data-tab]').forEach(b=>b.addEventListener('click',()=>{
   const id=b.dataset.tab;
-  if(id==='chat'){render();go('chat');}
+  if(id==='chat'){if($('voice').classList.contains('on'))stopAll();render();go('chat');}
   else go(id);
 }));
 function startLesson(prompt){
