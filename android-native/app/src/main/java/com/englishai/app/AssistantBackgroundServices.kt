@@ -208,3 +208,12 @@ class HotwordListeningService : Service() {
     }
     companion object { const val ACTION_START = "com.englishai.app.HOTWORD_START"; const val ACTION_STOP = "com.englishai.app.HOTWORD_STOP" }
 }
+
+
+/** Restore the user's opted-in daily alarm after Android restarts. */
+class AssistantBootReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent?) {
+        val prefs = context.getSharedPreferences("english_ai_user_settings", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("morningAlarmEnabled", false)) MorningAlarmReceiver.scheduleNext(context, 4, 40)
+    }
+}
