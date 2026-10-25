@@ -199,6 +199,8 @@ select,input[type=range],.txt{background:#132844;color:#f3f7ff;border:1px solid 
 @media(min-width:600px){.app{border-left:1px solid #1b3453;border-right:1px solid #1b3453}#bottomNav{left:24px;right:24px}.mainpage{padding-left:24px;padding-right:24px}}
 
 
+/* Settings opens as a refined full-height screen; overlays retain their normal sheet behavior. */
+#sheet.full-settings{top:0;height:100%;max-height:100%;border-radius:0;padding-top:calc(env(safe-area-inset-top,0px) + 20px)}
 /* Welcome screen follows the same navy/blue visual system. */
 .hero{background:linear-gradient(155deg,#1e64bd 0%,#358de7 55%,#9bd8ff 100%)}
 .orbwrap{background:#071326;box-shadow:0 0 0 1px #29486c,0 12px 38px #0005}
@@ -863,7 +865,7 @@ function startLesson(prompt){
 }
 document.querySelectorAll('[data-lesson]').forEach(b=>b.addEventListener('click',()=>startLesson(b.dataset.lesson)));
 $('lessonQuick').onclick=()=>{render();go('chat');$('inp').focus();};
-$('openSettingsPage').onclick=()=>{panel('sheet',true);};
+$('openSettingsPage').onclick=()=>{$('sheet').classList.add('full-settings');panel('sheet',true);};
 $('openModelsPage').onclick=()=>go('models');
 $('openSavedPage').onclick=()=>go('saved');
 $('openDrawerMore').onclick=()=>panel('drawer',true);
