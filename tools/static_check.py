@@ -79,4 +79,15 @@ workflow=rd(os.path.join(R,'.github/workflows/android-native.yml'))
 chk('workflow runs static checks before Gradle compile',workflow.find('python3 tools/static_check.py') >= 0 and workflow.find('python3 tools/static_check.py') < workflow.find('gradle assembleDebug'))
 chk('workflow verifies APK versionCode 7/versionName 1.3.4',"versionCode='7' versionName='1.3.4'" in workflow)
 chk('startup recovers backup after interrupted model import','backupModelFile.renameTo(modelFile)' in nb and 'previous model was restored after an interrupted update' in nb)
+# Native assistant routine and speech checks.
+try:
+    tts=rd(K+'EnglishTtsManager.kt')
+    us=rd(K+'UserSettings.kt')
+    chk('native TTS sanitizes markup and bilingual Portuguese segment', all(x in tts for x in ['sanitizeText','substringBefore("===")','<script','<style']))
+    chk('personalized greeting supports morning and evening', 'fun greeting(userName: String, morning: Boolean = true)' in tts and 'Hi, $safeName!' in tts and 'Good evening' in tts)
+    chk('native settings persist name, routine windows, and interaction mode', all(x in us for x in ['userName','morningStart','morningEnd','eveningStart','eveningEnd','interactionMode']))
+    chk('bridge exposes requested routine and greeting JavaScript APIs', all(x in nb for x in ['fun getUserName()','fun isWithinActiveRoutine()','fun triggerGreeting()','fun saveUserSettings(json: String)']))
+    chk('settings UI includes morning/evening windows and two interaction modes', all(x in h for x in ['id="morningStart"','id="morningEnd"','id="eveningStart"','id="eveningEnd"','value="continuous"','value="individual"','id="saveRoutine"']))
+except Exception as e:
+    chk('native assistant routines checks',False,str(e))
 print('\nRESULT:','ALL PASSED' if ok else 'FAILURES'); sys.exit(0 if ok else 1)
