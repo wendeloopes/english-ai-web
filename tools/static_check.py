@@ -36,7 +36,7 @@ chk('orb loop protected (try/catch + global extLevel)','extLevel' in h and '}cat
 chk('Portuguese format + not-spoken split present',"function splitPt(raw)" in h and "raw.indexOf('===')" in h and 'NativeBridge.translate' in h)
 
 # Speech queue regression checks: exercise the real helper from index.html in Node.
-speech_match=re.search(r'function speechText\\(s\\)\\s*\\{[\\s\\S]*?\\n\\}',h)
+speech_match=re.search(r'function speechText\(s\)\s*\{[\s\S]*?\n\}',h)
 chk('speech queue strips Portuguese segment and UI labels',bool(speech_match))
 if speech_match:
     test_js = speech_match.group(0) + r"""
