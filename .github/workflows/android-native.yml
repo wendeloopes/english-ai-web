@@ -1,8 +1,19 @@
 name: Build English Ai native Android
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [repair/english-ai-v1.3.4-audio-history]
+    paths:
+      - 'android-native/**'
+      - 'index.html'
+      - 'manifest.json'
+      - 'tools/**'
+      - 'icon-192.png'
+      - 'icon-512.png'
+      - 'icon-maskable-512.png'
+      - '.github/workflows/android-native.yml'
   push:
-    branches: [native-android-offline, native-android-1.3-claude-fixes, native-android-1.3.4-subtitle-smoothness, repair/english-ai-v1.3.4-audio-history]
+    branches: [native-android-offline, native-android-1.3-claude-fixes, native-android-1.3.4-subtitle-smoothness, repair/english-ai-v1.3.4-audio-history, design/navy-bottom-navigation-v1.3.4]
     paths:
       - 'android-native/**'
       - 'index.html'
