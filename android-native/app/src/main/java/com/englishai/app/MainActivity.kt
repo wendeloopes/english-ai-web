@@ -59,10 +59,10 @@ class MainActivity : ComponentActivity() {
         setContentView(web)
         web.loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
     }
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (intent != null) setIntent(intent)
-        if (intent?.action == HotwordListeningService.ACTION_HOTWORD_DETECTED) {
+        setIntent(intent)
+        if (intent.action == HotwordListeningService.ACTION_HOTWORD_DETECTED) {
             pendingHotwordActivation = true
             // Also pause immediately when this Activity is already in the foreground;
             // onNewIntent does not guarantee another onResume callback.
