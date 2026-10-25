@@ -712,6 +712,7 @@ if (window.NativeBridge) {
     if($('modelDownloadStatus')) $('modelDownloadStatus').textContent=(msg||text);
     if($('modelDownloadProgress') && !/Downloading model/i.test(text)) $('modelDownloadProgress').style.display='none';
   };
+  window.Native.onAnkiExportStatus = (ok,message) => { if(message)toast(message); };
   window.Native.onModelProgress = p => { $('prog').style.display='block'; $('prog').value=Math.max(0,Math.min(1,Number(p)||0)); };
   window.Native.onModelDownloadProgress = (p,received,total,name) => {
     const bar=$('modelDownloadProgress'),label=$('modelDownloadStatus');
@@ -1188,12 +1189,12 @@ syncBottomNav(document.querySelector('.screen.on')?.id||'welcome');
     }));
     $('enhAnki').onclick=()=>{
       if(!vocabItems.length)return toast('Adicione palavras antes de exportar.');
-      const clean=x=>String(x??'').replace(/[\\t\\r\\n]+/g,' ').trim();
+      const clean=x=>String(x??'').replace(/[\t\r\n]+/g,' ').trim();
       const tagsFor=v=>['english_ai',v.source==='starter'?'starter_deck':'personal',v.learned?'learned':'learning',v.favorite?'favorite':'', 'reviews_'+(Number(v.reviewCount)||0),'interval_'+(Number(v.intervalDays)||0)+'d',v.lastReviewedDay?'last_review_'+v.lastReviewedDay:'',v.dueAt?'due_'+new Date(v.dueAt).toISOString().slice(0,10):''].filter(Boolean).join(' ');
-      const rows=vocabItems.map(v=>[clean(v.word),clean([v.meaning,v.example?'Example: '+v.example:'', 'Progress: '+(Number(v.reviewCount)||0)+' reviews; interval '+(Number(v.intervalDays)||0)+' days'].filter(Boolean).join('\\n')),tagsFor(v)].map(clean).join(String.fromCharCode(9)));
-      const tsv='#separator:Tab\\n#html:false\\n#tags column:3\\n'+rows.join(String.fromCharCode(10))+'\\n';
+      const rows=vocabItems.map(v=>[clean(v.word),clean([v.meaning,v.example?'Example: '+v.example:'', 'Progress: '+(Number(v.reviewCount)||0)+' reviews; interval '+(Number(v.intervalDays)||0)+' days'].filter(Boolean).join('\n')),tagsFor(v)].map(clean).join(String.fromCharCode(9)));
+      const tsv='#separator:Tab\n#html:false\n#tags column:3\n'+rows.join(String.fromCharCode(10))+'\n';
       const filename='english-ai-anki-'+localDay()+'.tsv';
-      try{if(NB&&typeof NativeBridge.exportAnkiTsv==='function'){NativeBridge.exportAnkiTsv(tsv,filename);return}const blob=new Blob(['\\ufeff'+tsv],{type:'text/tab-separated-values;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('TSV pronto para importar no Anki.')}catch(e){toast('Não foi possível exportar o TSV neste dispositivo.')}
+      try{if(NB&&typeof NativeBridge.exportAnkiTsv==='function'){NativeBridge.exportAnkiTsv(tsv,filename);return}const blob=new Blob(['\ufeff'+tsv],{type:'text/tab-separated-values;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('TSV pronto para importar no Anki.')}catch(e){toast('Não foi possível exportar o TSV neste dispositivo.')}
     };
   }
 
