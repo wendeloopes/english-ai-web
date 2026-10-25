@@ -476,7 +476,7 @@ if (window.NativeBridge) {
   $('voiceSel').onfocus=()=>NativeBridge.getVoices();
   $('mute').onclick=()=>{ muted=!muted; $('mute').style.opacity=muted?.4:1; if(muted){q=[];NativeBridge.stopSpeaking();talking=false;} };
   NativeBridge.getVoices();
-  if(typeof NativeBridge.ptEnsure==='function')NativeBridge.ptEnsure();
+  if(S.pt && typeof NativeBridge.ptEnsure==='function')NativeBridge.ptEnsure();
   $('voiceSel').onchange=e=>{ S.voice=e.target.value; sv('echo.set',S); };
 }
 /* ================= ERROR LOG · PLUGINS · REPORTING ================= */
