@@ -1125,14 +1125,24 @@ syncBottomNav(document.querySelector('.screen.on')?.id||'welcome');
       ["that makes sense","isso faz sentido","That makes sense now."]
     ];
     function ensureStarterDeck(showToast){
-      const existing=new Set(vocabItems.map(v=>(v.word||'').toLowerCase()));
-      let added=0;
-      starterDeck.forEach(([word,meaning,example],i)=>{if(!existing.has(word.toLowerCase())){vocabItems.push({id:'starter-'+(i+1),word,meaning,example,source:'starter',createdAt:Date.now(),reviewCount:0,intervalDays:0,ease:2.5,dueAt:0,lastReviewed:0,lastReviewedDay:'',reviewDays:[],learned:false,favorite:false});added++}});
-      if(added){if(!sv('echo.vocabulary',vocabItems)){vocabItems=vocabItems.filter(v=>v.source!=='starter');toast('Não foi possível salvar o baralho inicial.');return false}if(showToast)toast(added+' cartões iniciais carregados.');}
+      const existing=new Map(vocabItems.map(v=>[(v.word||'').toLowerCase(),v]));
+      let changed=false,added=0;
+      starterDeck.forEach(([word,meaning,example],i)=>{
+        const key=word.toLowerCase(),prior=existing.get(key);
+        if(prior){
+          if(prior.source!=='starter'){prior.source='starter';changed=true}
+          if(!prior.example){prior.example=example;changed=true}
+          if(!prior.id){prior.id='starter-'+(i+1);changed=true}
+        }else{
+          const card={id:'starter-'+(i+1),word,meaning,example,source:'starter',createdAt:Date.now(),reviewCount:0,intervalDays:0,ease:2.5,dueAt:0,lastReviewed:0,lastReviewedDay:'',reviewDays:[],learned:false,favorite:false};
+          vocabItems.push(card);existing.set(key,card);added++;changed=true;
+        }
+      });
+      if(changed&&!sv('echo.vocabulary',vocabItems)){toast('Não foi possível salvar o baralho inicial.');return false}
+      if(added&&showToast)toast(added+' cartões iniciais carregados.');
       if($('enhDeckStatus'))$('enhDeckStatus').textContent='Baralho local: '+vocabItems.length+' cartões/palavras · '+vocabItems.filter(v=>v.source==='starter').length+' cartões essenciais · revisões salvas neste aparelho.';
       return true;
     }
-    ensureStarterDeck(false);
     const tools=document.createElement('div');tools.innerHTML='<div class="vocabStats"><div><b id="enhLearned">0</b><small>aprendidas</small></div><div><b id="enhToday">0</b><small>revisadas hoje</small></div><div><b id="enhDays">0</b><small>dias com revisão</small></div></div><input class="formfield" id="enhVocabSearch" type="search" placeholder="Buscar palavra ou significado…" aria-label="Buscar vocabulário"><div class="vocabFilters" role="tablist" aria-label="Filtro do vocabulário"><button type="button" class="vocabFilter active" data-enh-filter="all">Todos</button><button type="button" class="vocabFilter" data-enh-filter="favorites">Favoritos</button><button type="button" class="vocabFilter" data-enh-filter="recent">Recentes</button><button type="button" class="vocabFilter" data-enh-filter="learned">Aprendidas</button></div><div class="row2"><button class="btn g" id="enhAnki" type="button">Exportar TSV para Anki</button><button class="btn g" id="enhReview" type="button">Revisar cartões</button></div><button class="btn g" id="enhLoadStarter" type="button" style="width:100%;margin-top:9px">Carregar cartões iniciais (30)</button><p class="pagefootnote" id="enhDeckStatus" role="status">Baralho local: seus cartões e revisões são guardados neste aparelho.</p>';
     vocabForm.insertAdjacentElement('beforebegin',tools);
     let filter='all';
