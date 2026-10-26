@@ -771,6 +771,10 @@ if (window.NativeBridge) {
   pump = function(){ if(talking||!q.length)return; const s=q.shift(); talking=true; nativeSpeakingText=s; nativeSpeakingId=String(Date.now())+String(Math.random()); setState('speaking'); showCap(s,-1); NativeBridge.speak(nativeSpeakingId,s,String(S.rate),String(S.voice||'')); };
   stopAll = function(){ nativeTranslationId=''; nativeTranslationBubble=null; gen++; q=[]; talking=false; busy=false; NativeBridge.cancelGenerate(); NativeBridge.stopSpeaking(); if(nativeListening)NativeBridge.cancelListening(); nativeListening=false; rec=null; persist(); setState('idle'); };
   listen = async function(){ if(state==='listening')return; stopAll(); heard=''; nativeListening=true; setState('listening'); cap('<span class="you">Say something in English…</span>'); NativeBridge.startListening(); };
+  window.Native.onVoiceCalibrationStatus = (ok,message) => { const el=$('voiceCalibrationStatus'); if(el&&message)el.textContent=message; if(el)el.style.color=ok?'#8dffbd':'#d9ccff'; };
+  window.Native.onVoiceCalibrationSuccess = () => { const el=$('voiceCalibrationStatus'); if(el){el.textContent='Voz calibrada com sucesso!';el.style.color='#8dffbd';} toast('Voz calibrada com sucesso!'); };
+  window.Native.onOverlayText = text => { try{go('chat');$('inp').value=String(text||'');$('inp').focus();setTimeout(()=>{const btn=$('send');if(btn)btn.click()},250);}catch(e){} };
+  $('trainVoiceButton')?.addEventListener('click',()=>{ if(NB&&typeof NativeBridge.startVoiceCalibration==='function')NativeBridge.startVoiceCalibration(); else {const el=$('voiceCalibrationStatus');if(el)el.textContent='A calibração exige a versão Android nativa e o modelo Vosk instalado.';} });
   window.Native.onHotwordActivated = () => {
     if(state==='listening') return;
     // Quiet, short confirmation tone plus visual listening ripple while the app is visible.
@@ -871,6 +875,8 @@ $('saveRoutine').onclick=saveRoutineSettings;
     '<div style="height:1px;background:var(--line,#333)"></div>'+
     '<label style="display:flex;align-items:center;gap:10px"><input id="hotwordToggle" type="checkbox" style="width:20px;height:20px"> <span><b>“Hi, English AI!” activation</b><br><small>Uses the microphone while a permanent Android notification is visible.</small></span></label>'+
     '<div id="hotwordStatus" style="font-size:12px;opacity:.8">Voice activation is off.</div>'+
+    '<button class="btn g" id="trainVoiceButton" type="button" style="width:100%;margin-top:10px">Treinar Reconhecimento de Voz</button>'+
+    '<div id="voiceCalibrationStatus" role="status" aria-live="polite" style="font-size:12px;opacity:.9;margin-top:8px">Teste “Hi English AI” e calibre a ativação por voz.</div>'+
     '<small style="opacity:.72">The “Hi, English AI” trigger uses the Vosk model on this device only. Download the offline speech engine first, allow microphone and notification permissions, then enable the trigger. Android may restrict microphone startup at boot; re-enable it from the app if the service was stopped. Turn it off here or from the persistent notification.</small>';
   $('saveRoutine').insertAdjacentElement('afterend',box);
   const alarm=$('morningAlarmToggle'),hotword=$('hotwordToggle');
