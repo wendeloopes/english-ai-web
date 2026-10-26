@@ -11,9 +11,6 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RadialGradient
 import android.graphics.Shader
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -29,8 +26,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.concurrent.thread
 import kotlin.math.max
 import kotlin.math.min
 
@@ -39,20 +34,14 @@ class AssistantOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var root: FrameLayout? = null
     private var orb: VoiceOrb? = null
-    private var recorder: AudioRecord? = null
-    private val running = AtomicBoolean(false)
     private val main = Handler(Looper.getMainLooper())
     private var amplitude = 0f
 
     override fun onCreate() {
         super.onCreate()
-        val manager = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(CHANNEL, "English AI overlay", NotificationManager.IMPORTANCE_LOW))
-        val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL) else Notification.Builder(this)
-        startForeground(NOTIFICATION_ID, builder.setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("English AI assistant").setContentText("Voice assistant overlay is active").setOngoing(true).build())
+        // Visual-only overlay. It must not start a microphone foreground service
+        // from a background hotword callback on Android 14+.
     }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_CLOSE) { removeOverlay(); stopSelf(); return START_NOT_STICKY }
         if (Build.VERSION.SDK_INT >= 23 && !android.provider.Settings.canDrawOverlays(this)) { stopSelf(); return START_NOT_STICKY }
@@ -62,7 +51,6 @@ class AssistantOverlayService : Service() {
             tone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 125)
             main.postDelayed({ try { tone.release() } catch (_: Exception) {} }, 220)
         } catch (_: Exception) {}
-        startLevelMeter()
         return START_NOT_STICKY
     }
 
@@ -124,50 +112,17 @@ class AssistantOverlayService : Service() {
         try { windowManager?.addView(container, params) } catch (_: Exception) { root = null; stopSelf() }
     }
 
-    private fun startLevelMeter() {
-        if (!running.compareAndSet(false, true)) return
-        thread(name = "EnglishAI-overlay-meter", isDaemon = true) {
-            var audio: AudioRecord? = null
-            try {
-                val minBytes = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-                if (minBytes <= 0) return@thread
-                audio = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, max(minBytes, 8192))
-                recorder = audio
-                if (audio.state != AudioRecord.STATE_INITIALIZED) return@thread
-                audio.startRecording()
-                val data = ShortArray(1024)
-                while (running.get()) {
-                    val n = audio.read(data, 0, data.size)
-                    if (n < 0) break
-                    if (n == 0) continue
-                    var sum = 0.0
-                    for (i in 0 until n) { val x = data[i].toDouble(); sum += x * x }
-                    val rms = kotlin.math.sqrt(sum / n).toFloat()
-                    amplitude = min(1f, rms / 5500f)
-                    main.post { orb?.invalidate() }
-                }
-            } catch (_: Exception) {
-                // The animation remains active even when a device restricts a second recorder.
-            } finally {
-                try { audio?.stop() } catch (_: Exception) {}
-                try { audio?.release() } catch (_: Exception) {}
-                recorder = null
-            }
-        }
-    }
+
 
     private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat(); setStroke(dp(1), Color.argb(70,255,255,255)) }
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
     private fun removeOverlay() {
-        running.set(false)
-        try { recorder?.stop() } catch (_: Exception) {}
         try { root?.let { windowManager?.removeView(it) } } catch (_: Exception) {}
         root = null; orb = null
     }
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onDestroy() {
         removeOverlay()
-        stopForeground(STOP_FOREGROUND_REMOVE)
         val prefs = getSharedPreferences("english_ai_user_settings", MODE_PRIVATE)
         if (prefs.getBoolean("hotwordEnabled", false)) {
             try {
@@ -204,7 +159,5 @@ class AssistantOverlayService : Service() {
         const val ACTION_CLOSE = "com.englishai.app.OVERLAY_CLOSE"
         const val ACTION_OVERLAY_TEXT = "com.englishai.app.OVERLAY_TEXT"
         const val EXTRA_OVERLAY_TEXT = "com.englishai.app.OVERLAY_TEXT_VALUE"
-        private const val CHANNEL = "english_ai_overlay"
-        private const val NOTIFICATION_ID = 4046
     }
 }
