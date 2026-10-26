@@ -118,8 +118,8 @@ class AlarmGreetingService : Service(), TextToSpeech.OnInitListener {
 }
 
 /**
- * User-enabled, visible foreground microphone service. Android speech recognition is used
- * as the local recognizer where available; the hotword is never listened for covertly.
+ * User-enabled, visible foreground microphone service. Hotword recognition is Vosk-only and
+ * remains on-device; it is never listened for covertly.
  */
 class HotwordListeningService : Service() {
     private var recognizer: SpeechRecognizer? = null
@@ -215,7 +215,11 @@ class HotwordListeningService : Service() {
                 val buffer = ShortArray(4096)
                 while (active && voskActive) {
                     val count = audio.read(buffer, 0, buffer.size)
-                    if (count <= 0) continue
+                    if (count < 0) {
+                        if (!active || !voskActive) break
+                        throw IllegalStateException("Vosk microphone stream stopped (AudioRecord error $count). Re-enable voice activation and check microphone access.")
+                    }
+                    if (count == 0) continue
                     val bytes = ByteArray(count * 2)
                     for (i in 0 until count) {
                         val sample = buffer[i].toInt()
@@ -285,7 +289,8 @@ class HotwordListeningService : Service() {
                 .replace(Regex("\\s+"), " ")
                 .trim()
             // The activation phrase "hi english ai" can be transcribed as "a i", "eye", or "I".
-            p = p.replace(Regex("\\ba\\s+i\\b"), "ai")
+            p = p.replace(Regex("\\b(high|hey) english\\b"), "hi english")
+                .replace(Regex("\\ba\\s+i\\b"), "ai")
                 .replace(Regex("\\benglish\\s+i\\b"), "english ai")
                 .replace(Regex("\\b(eye|ay)\\b"), "ai")
                 .replace(Regex("\\s+"), " ")
