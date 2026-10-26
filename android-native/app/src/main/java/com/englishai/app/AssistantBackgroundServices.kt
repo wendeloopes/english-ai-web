@@ -133,6 +133,9 @@ class HotwordListeningService : Service() {
     @Volatile private var voskModel: Model? = null
     @Volatile private var voskRecognizer: Recognizer? = null
     @Volatile private var voskThread: Thread? = null
+    @Volatile private var captionActive = false
+    @Volatile private var captionRecorder: AudioRecord? = null
+    @Volatile private var captionThread: Thread? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
@@ -153,11 +156,13 @@ class HotwordListeningService : Service() {
             ACTION_CALIBRATE -> { calibrationMode = true; active = true; restarting = false; acquireHotwordWakeLock(); stopVoskHotword(); android.os.Handler(mainLooper).postDelayed({ startRecognition() }, 250); return START_STICKY }
             ACTION_PAUSE -> { pauseRecognition(); return START_STICKY }
             ACTION_RESUME, ACTION_START, null -> {
+                stopVoskCaptioning()
                 activationHandled = false
                 restarting = false
                 active = true
                 acquireHotwordWakeLock()
-                startRecognition()
+                // Let the captioning AudioRecord finish releasing before hotword capture resumes.
+                android.os.Handler(mainLooper).postDelayed({ if (active) startRecognition() }, 450)
                 return START_STICKY
             }
             else -> return START_STICKY
@@ -179,6 +184,7 @@ class HotwordListeningService : Service() {
     private fun pauseRecognition() {
         active = false
         restarting = false
+        stopVoskCaptioning()
         stopVoskHotword()
         releaseHotwordWakeLock()
         try { recognizer?.cancel() } catch (_: Exception) {}
@@ -294,6 +300,81 @@ class HotwordListeningService : Service() {
     }
 
     /**
+     * Full-vocabulary offline transcription while the floating assistant is open.
+     * Audio capture stays in this foreground/background voice service; the overlay only
+     * receives text and RMS broadcasts and never creates an AudioRecord of its own.
+     */
+    private fun startVoskCaptioning() {
+        if (captionActive) return
+        val modelDir = java.io.File(filesDir, "vosk-model-en-us")
+        if (!java.io.File(modelDir, "am").isDirectory ||
+            !java.io.File(modelDir, "conf").isDirectory ||
+            !java.io.File(modelDir, "graph").isDirectory) return
+        captionActive = true
+        captionThread = Thread({
+            var audio: AudioRecord? = null
+            var model: Model? = null
+            var speechRecognizer: Recognizer? = null
+            try {
+                model = Model(modelDir.absolutePath)
+                speechRecognizer = Recognizer(model, 16000.0f)
+                val minBuffer = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+                check(minBuffer > 0) { "Could not initialize Vosk caption microphone." }
+                audio = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuffer, 8192))
+                captionRecorder = audio
+                check(audio.state == AudioRecord.STATE_INITIALIZED) { "Vosk caption microphone could not be initialized." }
+                audio.startRecording()
+                val buffer = ShortArray(4096)
+                var lastLevelBroadcast = 0L
+                while (captionActive) {
+                    val count = audio.read(buffer, 0, buffer.size)
+                    if (count <= 0) { if (!captionActive) break; continue }
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - lastLevelBroadcast >= 80L) {
+                        var sumSquares = 0.0
+                        for (i in 0 until count) { val sample = buffer[i].toDouble(); sumSquares += sample * sample }
+                        val rms = kotlin.math.sqrt(sumSquares / count).toFloat()
+                        val normalized = (rms / 9000f).coerceIn(0f, 1f)
+                        sendBroadcast(Intent(AssistantOverlayService.ACTION_AUDIO_LEVEL)
+                            .setPackage(packageName).putExtra(AssistantOverlayService.EXTRA_AUDIO_LEVEL, normalized))
+                        lastLevelBroadcast = now
+                    }
+                    val bytes = ByteArray(count * 2)
+                    for (i in 0 until count) {
+                        val sample = buffer[i].toInt()
+                        bytes[i * 2] = (sample and 0xff).toByte()
+                        bytes[i * 2 + 1] = (sample shr 8).toByte()
+                    }
+                    val isFinal = speechRecognizer.acceptWaveForm(bytes, bytes.size)
+                    val json = if (isFinal) speechRecognizer.result else speechRecognizer.partialResult
+                    val text = JSONObject(json).optString(if (isFinal) "text" else "partial", "").trim()
+                    if (text.isNotEmpty()) {
+                        sendBroadcast(Intent(AssistantOverlayService.ACTION_TRANSCRIPT)
+                            .setPackage(packageName).putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT, text)
+                            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_FINAL, isFinal))
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("EnglishAI-VoiceTraining", "Vosk live captioning failed", e)
+            } finally {
+                captionActive = false
+                try { audio?.stop() } catch (_: Exception) {}
+                try { audio?.release() } catch (_: Exception) {}
+                try { speechRecognizer?.close() } catch (_: Exception) {}
+                try { model?.close() } catch (_: Exception) {}
+                if (captionRecorder === audio) captionRecorder = null
+                captionThread = null
+            }
+        }, "EnglishAI-Vosk-Captions").apply { isDaemon = true; start() }
+    }
+
+    private fun stopVoskCaptioning() {
+        captionActive = false
+        try { captionRecorder?.stop() } catch (_: Exception) {}
+    }
+
+    /**
      * Hotword recognition is deliberately Vosk-only. Do not silently fall back to Android's
      * SpeechRecognizer (which may use a network provider and hides a missing Vosk model).
      */
@@ -335,15 +416,7 @@ class HotwordListeningService : Service() {
         activationHandled = true
         val isCalibration = calibrationMode
         calibrationMode = false
-        // When the display is off, give a brief, low-volume confirmation tone only.
-        try {
-            val power = getSystemService(Context.POWER_SERVICE) as PowerManager
-            if (!power.isInteractive) {
-                val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 35)
-                tone.startTone(ToneGenerator.TONE_PROP_ACK, 140)
-                android.os.Handler(mainLooper).postDelayed({ tone.release() }, 220)
-            }
-        } catch (_: Exception) {}
+        // The overlay emits the single confirmation tone after this valid activation event.
         restarting = true
         stopVoskHotword()
         try { recognizer?.cancel() } catch (_: Exception) {}
@@ -384,8 +457,10 @@ class HotwordListeningService : Service() {
             if (overlayAllowed) {
                 active = false // The overlay owns the mic until it closes, then it resumes Vosk.
                 try {
-                    val overlay = Intent(this, AssistantOverlayService::class.java).setAction(AssistantOverlayService.ACTION_SHOW)
+                    val overlay = Intent(this, AssistantOverlayService::class.java).setAction(AssistantOverlayService.ACTION_ACTIVATED)
                     startService(overlay)
+                    // Wait for the hotword AudioRecord to be released before starting full Vosk transcription.
+                    android.os.Handler(mainLooper).postDelayed({ startVoskCaptioning() }, 500)
                 } catch (_: Exception) { postHotwordNotification() }
             } else {
                 postHotwordNotification()
@@ -446,6 +521,7 @@ class HotwordListeningService : Service() {
     override fun onDestroy() {
         active = false
         getSharedPreferences("english_ai_user_settings", MODE_PRIVATE).edit().putBoolean("hotwordEnabled", false).apply()
+        stopVoskCaptioning()
         stopVoskHotword()
         releaseHotwordWakeLock()
         try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) {}
