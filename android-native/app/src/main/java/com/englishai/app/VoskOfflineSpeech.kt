@@ -41,8 +41,78 @@ class VoskOfflineSpeech(
     @Volatile private var model: Model? = null
     @Volatile private var recognizer: Recognizer? = null
 
-    fun isInstalled(): Boolean = File(modelDir, "am").isDirectory &&
-        File(modelDir, "conf").isDirectory && File(modelDir, "graph").isDirectory
+    /**
+     * Install a bundled model if the APK contains one. Supported asset layouts:
+     * assets/vosk-model-en-us.zip OR assets/vosk-model-en-us/{am,conf,graph,...}.
+     * If no model is bundled, the existing explicit download flow remains available.
+     */
+    @Synchronized private fun installBundledModelIfPresent(): Boolean {
+        if (File(modelDir, "am").isDirectory && File(modelDir, "conf").isDirectory && File(modelDir, "graph").isDirectory) return true
+        val assets = context.assets
+        return try {
+            val rootEntries = assets.list("")?.toSet().orEmpty()
+            if ("vosk-model-en-us.zip" in rootEntries) {
+                tempDir.deleteRecursively()
+                tempDir.mkdirs()
+                assets.open("vosk-model-en-us.zip").use { raw ->
+                    ZipInputStream(raw.buffered()).use { zip ->
+                        while (true) {
+                            val entry = zip.nextEntry ?: break
+                            val pieces = entry.name.replace('\\\\', '/').split('/').filter { it.isNotEmpty() }
+                            val relative = if (pieces.firstOrNull() == "vosk-model-en-us") pieces.drop(1).joinToString("/") else pieces.joinToString("/")
+                            if (relative.isNotBlank() && !relative.split('/').any { it == ".." }) {
+                                val out = File(tempDir, relative)
+                                if (entry.isDirectory) out.mkdirs() else {
+                                    out.parentFile?.mkdirs()
+                                    FileOutputStream(out).use { output ->
+                                        val buffer = ByteArray(64 * 1024)
+                                        while (true) { val count = zip.read(buffer); if (count < 0) break; output.write(buffer, 0, count) }
+                                    }
+                                }
+                            }
+                            zip.closeEntry()
+                        }
+                    }
+                }
+                if (File(tempDir, "am").isDirectory && File(tempDir, "conf").isDirectory && File(tempDir, "graph").isDirectory) {
+                    modelDir.deleteRecursively()
+                    check(tempDir.renameTo(modelDir)) { "Could not install bundled Vosk model into app storage." }
+                    return true
+                }
+                tempDir.deleteRecursively()
+            }
+            if ("vosk-model-en-us" in rootEntries) {
+                fun copyAssetTree(assetPath: String, destination: File) {
+                    val entries = assets.list(assetPath).orEmpty()
+                    if (entries.isEmpty()) {
+                        destination.parentFile?.mkdirs()
+                        assets.open(assetPath).use { input -> FileOutputStream(destination).use { output -> input.copyTo(output) } }
+                    } else {
+                        destination.mkdirs()
+                        entries.forEach { name -> copyAssetTree("$assetPath/$name", File(destination, name)) }
+                    }
+                }
+                tempDir.deleteRecursively()
+                copyAssetTree("vosk-model-en-us", tempDir)
+                if (File(tempDir, "am").isDirectory && File(tempDir, "conf").isDirectory && File(tempDir, "graph").isDirectory) {
+                    modelDir.deleteRecursively()
+                    check(tempDir.renameTo(modelDir)) { "Could not install bundled Vosk model into app storage." }
+                    return true
+                }
+                tempDir.deleteRecursively()
+            }
+            false
+        } catch (e: Exception) {
+            android.util.Log.e("VoskOfflineSpeech", "Bundled Vosk asset installation failed", e)
+            tempDir.deleteRecursively()
+            false
+        }
+    }
+
+    fun isInstalled(): Boolean {
+        if (File(modelDir, "am").isDirectory && File(modelDir, "conf").isDirectory && File(modelDir, "graph").isDirectory) return true
+        return installBundledModelIfPresent()
+    }
 
     private fun ui(block: () -> Unit) = main.post(block)
 
@@ -147,6 +217,7 @@ class VoskOfflineSpeech(
     }
 
     fun start() {
+        android.util.Log.d("VoskOfflineSpeech", "start() called; modelDir=${modelDir.absolutePath}")
         if (!isInstalled()) {
             ui { error("The offline English speech model is not installed yet. Open Settings → Offline speech and tap Download (about 40 MB, one-time download).") }
             return
@@ -156,14 +227,18 @@ class VoskOfflineSpeech(
         cancelled = false
         io.execute {
             try {
+                android.util.Log.d("VoskOfflineSpeech", "Initializing Vosk Model at ${modelDir.absolutePath}")
                 val activeModel = model ?: Model(modelDir.absolutePath).also { model = it }
+                android.util.Log.d("VoskOfflineSpeech", "Vosk Model initialized successfully")
                 val activeRecognizer = Recognizer(activeModel, 16000.0f).also { recognizer = it }
                 val minBytes = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
                 check(minBytes > 0) { "This phone could not initialize microphone audio for offline speech." }
+                android.util.Log.d("VoskOfflineSpeech", "Opening AudioRecord; minBuffer=$minBytes")
                 val audio = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT, maxOf(minBytes, 8192)).also { recorder = it }
                 check(audio.state == AudioRecord.STATE_INITIALIZED) { "The microphone could not be initialized." }
                 audio.startRecording()
+                android.util.Log.d("VoskOfflineSpeech", "AudioRecord started; state=${audio.state}, recordingState=${audio.recordingState}")
                 ui { ready() }
                 val buffer = ShortArray(4096)
                 var speechStarted = false
@@ -198,6 +273,7 @@ class VoskOfflineSpeech(
                     }
                     if (activeRecognizer.acceptWaveForm(bytes, bytes.size)) {
                         endpointText = JSONObject(activeRecognizer.result).optString("text", "").trim()
+                        android.util.Log.d("VoskOfflineSpeech", "Final Vosk result: $endpointText")
                         if (endpointText.isNotBlank()) ui { partial(endpointText) }
                         if (speechDetected) listening = false
                     } else {
@@ -219,6 +295,7 @@ class VoskOfflineSpeech(
                     ui { result(finalText) }
                 }
             } catch (e: Exception) {
+                android.util.Log.e("VoskOfflineSpeech", "Recognition failed", e)
                 if (!cancelled) ui { error(e.message ?: "Offline English speech recognition failed. Try again or type your answer.") }
             } finally {
                 try { recorder?.release() } catch (_: Exception) {}
