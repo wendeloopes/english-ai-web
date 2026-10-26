@@ -114,7 +114,7 @@ class AssistantOverlayService : Service() {
 
     private fun showOverlay() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        val container = FrameLayout(this).apply { setBackgroundColor(Color.TRANSPARENT) }
+        val container = FrameLayout(this).apply { setBackgroundColor(Color.rgb(7, 9, 20)) }
         val sphere = VoiceOrb(this) { amplitude }.also { orb = it }
         val sphereParams = FrameLayout.LayoutParams(dp(260), dp(290), Gravity.CENTER)
         container.addView(sphere, sphereParams)
