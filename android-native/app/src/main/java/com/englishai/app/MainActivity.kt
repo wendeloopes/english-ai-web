@@ -49,8 +49,9 @@ class MainActivity : ComponentActivity() {
             if (pendingVoiceTrainingPermission) { pendingVoiceTrainingPermission = false; bridge.startVoiceCalibrationGranted() }
             else bridge.setHotwordEnabled(true)
         } else {
+            val wasVoiceTraining = pendingVoiceTrainingPermission
             pendingVoiceTrainingPermission = false
-            bridge.hotwordPermissionDenied()
+            if (wasVoiceTraining) bridge.voiceTrainingPermissionDenied() else bridge.hotwordPermissionDenied()
         }
     }
     private val firstLaunchPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
