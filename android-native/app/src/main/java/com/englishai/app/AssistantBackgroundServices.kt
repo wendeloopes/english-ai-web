@@ -195,25 +195,33 @@ class HotwordListeningService : Service() {
         val modelDir = java.io.File(filesDir, "vosk-model-en-us")
         if (!java.io.File(modelDir, "am").isDirectory ||
             !java.io.File(modelDir, "conf").isDirectory ||
-            !java.io.File(modelDir, "graph").isDirectory) return
+            !java.io.File(modelDir, "graph").isDirectory) {
+            android.util.Log.e("EnglishAI-VoiceTraining", "Vosk model directory is missing/incomplete: ${modelDir.absolutePath}")
+            return
+        }
+        android.util.Log.d("EnglishAI-VoiceTraining", "Starting Vosk hotword worker; modelDir=${modelDir.absolutePath}")
         voskActive = true
         voskThread = Thread({
             var audio: AudioRecord? = null
             var model: Model? = null
             var grammarRecognizer: Recognizer? = null
             try {
+                android.util.Log.d("EnglishAI-VoiceTraining", "Initializing Vosk Model")
                 model = Model(modelDir.absolutePath)
                 voskModel = model
+                android.util.Log.d("EnglishAI-VoiceTraining", "Vosk Model initialized")
                 val grammar = """["hi english ai","hey english ai","hello english ai","hi english eye","hey english eye","hello english eye","[unk]"]"""
                 grammarRecognizer = Recognizer(model, 16000.0f, grammar)
                 voskRecognizer = grammarRecognizer
                 val minBuffer = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+                android.util.Log.d("EnglishAI-VoiceTraining", "AudioRecord minimum buffer=$minBuffer")
                 check(minBuffer > 0) { "Could not initialize offline microphone audio." }
                 audio = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuffer, 8192))
                 voskRecorder = audio
                 check(audio.state == AudioRecord.STATE_INITIALIZED) { "Offline microphone could not be initialized." }
                 audio.startRecording()
+                android.util.Log.d("EnglishAI-VoiceTraining", "AudioRecord started state=${audio.state}, recordingState=${audio.recordingState}")
                 val buffer = ShortArray(4096)
                 while (active && voskActive) {
                     val count = audio.read(buffer, 0, buffer.size)
@@ -232,6 +240,7 @@ class HotwordListeningService : Service() {
                     val json = if (isFinal) grammarRecognizer.result else grammarRecognizer.partialResult
                     val text = JSONObject(json).optString(if (isFinal) "text" else "partial", "").trim()
                     if (text.isNotBlank()) {
+                        android.util.Log.d("EnglishAI-VoiceTraining", "Vosk ${if (isFinal) "final" else "partial"} hotword text: $text")
                         val bundle = android.os.Bundle().apply {
                             putStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf(text))
                         }
@@ -239,6 +248,7 @@ class HotwordListeningService : Service() {
                     }
                 }
             } catch (e: Exception) {
+                android.util.Log.e("EnglishAI-VoiceTraining", "Vosk hotword model/audio/recognition failed", e)
                 // Never fail silently or switch to a network-capable recognizer.
                 if (active && voskActive) {
                     postOfflineSpeechUnavailable(e.message ?: "O Vosk não conseguiu iniciar o microfone ou carregar o modelo.")
@@ -300,6 +310,7 @@ class HotwordListeningService : Service() {
             Regex("(?:^|\\s)(hi|hey|hello) english ai(?:\\s|$)").containsMatchIn(p)
         }
         if (!match) return
+        android.util.Log.d("EnglishAI-VoiceTraining", "Activation phrase recognized: ${phrases.joinToString()} (calibration=$calibrationMode)")
 
         // Handle the phrase once and release Vosk's AudioRecord before handing off.
         activationHandled = true
