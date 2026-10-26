@@ -178,14 +178,14 @@ class AssistantOverlayService : Service() {
         root = container
         val type = if (Build.VERSION.SDK_INT >= 26) LayoutParams.TYPE_APPLICATION_OVERLAY else LayoutParams.TYPE_PHONE
         val params = LayoutParams(-1, -1, type,
-            LayoutParams.FLAG_LAYOUT_IN_SCREEN or LayoutParams.FLAG_LAYOUT_NO_LIMITS or LayoutParams.FLAG_DIM_BEHIND,
+            LayoutParams.FLAG_LAYOUT_IN_SCREEN or LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             android.graphics.PixelFormat.TRANSLUCENT).apply {
             gravity = Gravity.TOP or Gravity.START
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-            dimAmount = 0.012f
+            dimAmount = 0f
             if (Build.VERSION.SDK_INT >= 31) {
                 flags = flags or LayoutParams.FLAG_BLUR_BEHIND
-                setBlurBehindRadius(dp(6))
+                setBlurBehindRadius(dp(3))
             }
         }
         try { windowManager?.addView(container, params) } catch (_: Exception) { root = null; stopSelf() }
@@ -262,15 +262,15 @@ class AssistantOverlayService : Service() {
             // Soft, translucent aura with a brighter center and a feathered edge.
             paint.style = Paint.Style.FILL
             paint.shader = RadialGradient(cx-r*.18f, cy-r*.24f, r*1.48f,
-                intArrayOf(Color.argb(250, 118,226,255), Color.argb(242, 48,132,255), Color.argb(222, 112,55,255), Color.argb(112, 26,22,112), Color.TRANSPARENT),
-                floatArrayOf(0f,.20f,.46f,.76f,1f), Shader.TileMode.CLAMP)
-            canvas.drawCircle(cx, cy, r*1.38f, paint)
+                intArrayOf(Color.rgb(115,255,248), Color.argb(255, 0,190,255), Color.argb(248, 80,72,255), Color.argb(100, 24,12,120), Color.TRANSPARENT),
+                floatArrayOf(0f,.22f,.48f,.78f,1f), Shader.TileMode.CLAMP)
+            canvas.drawCircle(cx, cy, r*1.24f, paint)
             paint.shader = null
 
             // Fine animated contour and small orbiting light particles.
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 1.2f + energy*3.2f
-            paint.color = Color.argb((105+energy*120).toInt().coerceIn(0,225), 72,190,255)
+            paint.strokeWidth = 1.5f + energy*2.6f
+            paint.color = Color.argb((190+energy*65).toInt().coerceIn(0,255), 45,230,255)
             canvas.drawCircle(cx, cy, r*(1.16f + energy*.28f), paint)
             paint.style = Paint.Style.FILL
             val density = resources.displayMetrics.density
