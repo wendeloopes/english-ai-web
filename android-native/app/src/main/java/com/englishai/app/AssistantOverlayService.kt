@@ -59,7 +59,10 @@ class AssistantOverlayService : Service() {
         super.onCreate()
         // Visual-only overlay. Audio levels come from the existing foreground hotword
         // service; this overlay never opens the microphone itself.
-        val filter = IntentFilter(ACTION_AUDIO_LEVEL)
+        val filter = IntentFilter().apply {
+            addAction(ACTION_AUDIO_LEVEL)
+            addAction(ACTION_TRANSCRIPT)
+        }
         try {
             if (Build.VERSION.SDK_INT >= 33) registerReceiver(levelReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
             else registerReceiver(levelReceiver, filter)
@@ -144,7 +147,11 @@ class AssistantOverlayService : Service() {
             android.graphics.PixelFormat.TRANSLUCENT).apply {
             gravity = Gravity.TOP or Gravity.START
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-            dimAmount = 0.045f
+            dimAmount = 0.035f
+            if (Build.VERSION.SDK_INT >= 31) {
+                flags = flags or LayoutParams.FLAG_BLUR_BEHIND
+                setBlurBehindRadius(dp(12))
+            }
         }
         try { windowManager?.addView(container, params) } catch (_: Exception) { root = null; stopSelf() }
     }
