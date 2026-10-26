@@ -36,14 +36,21 @@ class AssistantOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var root: FrameLayout? = null
     private var orb: VoiceOrb? = null
+    private var captionView: TextView? = null
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var amplitude = 0f
     private var levelReceiverRegistered = false
     private val levelReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == ACTION_AUDIO_LEVEL) {
-                amplitude = intent.getFloatExtra(EXTRA_AUDIO_LEVEL, 0f).coerceIn(0f, 1f)
-                orb?.invalidate()
+            when (intent?.action) {
+                ACTION_AUDIO_LEVEL -> {
+                    amplitude = intent.getFloatExtra(EXTRA_AUDIO_LEVEL, 0f).coerceIn(0f, 1f)
+                    orb?.invalidate()
+                }
+                ACTION_TRANSCRIPT -> {
+                    val text = intent.getStringExtra(EXTRA_TRANSCRIPT).orEmpty().trim()
+                    if (text.isNotEmpty()) captionView?.text = text
+                }
             }
         }
     }
@@ -63,11 +70,8 @@ class AssistantOverlayService : Service() {
         if (intent?.action == ACTION_CLOSE) { removeOverlay(); stopSelf(); return START_NOT_STICKY }
         if (Build.VERSION.SDK_INT >= 23 && !android.provider.Settings.canDrawOverlays(this)) { stopSelf(); return START_NOT_STICKY }
         if (root == null) showOverlay()
-        try {
-            val tone = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 62)
-            tone.startTone(android.media.ToneGenerator.TONE_PROP_ACK, 145)
-            main.postDelayed({ try { tone.release() } catch (_: Exception) {} }, 220)
-        } catch (_: Exception) {}
+        // Play the confirmation only for a valid voice-trigger event, never on manual open/restart.
+        if (intent?.action == ACTION_ACTIVATED) playActivationTone()
         return START_NOT_STICKY
     }
 
@@ -80,10 +84,22 @@ class AssistantOverlayService : Service() {
 
         val title = TextView(this).apply {
             text = "I'm ready!"
-            setTextColor(Color.WHITE); textSize = 20f; gravity = Gravity.CENTER
+            setTextColor(Color.argb(225, 255, 255, 255)); textSize = 20f; gravity = Gravity.CENTER
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         }
         container.addView(title, FrameLayout.LayoutParams(-1, 54, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(60) })
+
+        val caption = TextView(this).apply {
+            text = "Listening…"
+            setTextColor(Color.argb(230, 255, 255, 255)); textSize = 15f; gravity = Gravity.CENTER
+            maxLines = 3; ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(18), dp(8), dp(18), dp(8))
+            background = rounded(Color.argb(48, 18, 18, 30), 18)
+        }
+        captionView = caption
+        container.addView(caption, FrameLayout.LayoutParams(-1, dp(68), Gravity.BOTTOM).apply {
+            leftMargin = dp(24); rightMargin = dp(24); bottomMargin = dp(104)
+        })
 
         val close = TextView(this).apply {
             text = "×"; textSize = 32f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
@@ -124,18 +140,30 @@ class AssistantOverlayService : Service() {
         root = container
         val type = if (Build.VERSION.SDK_INT >= 26) LayoutParams.TYPE_APPLICATION_OVERLAY else LayoutParams.TYPE_PHONE
         val params = LayoutParams(-1, -1, type,
-            LayoutParams.FLAG_LAYOUT_IN_SCREEN or LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            android.graphics.PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.START; softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE }
+            LayoutParams.FLAG_LAYOUT_IN_SCREEN or LayoutParams.FLAG_LAYOUT_NO_LIMITS or LayoutParams.FLAG_DIM_BEHIND,
+            android.graphics.PixelFormat.TRANSLUCENT).apply {
+            gravity = Gravity.TOP or Gravity.START
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            dimAmount = 0.045f
+        }
         try { windowManager?.addView(container, params) } catch (_: Exception) { root = null; stopSelf() }
     }
 
 
 
-    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat(); setStroke(dp(1), Color.argb(70,255,255,255)) }
+    private fun playActivationTone() {
+        try {
+            val tone = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 48)
+            tone.startTone(android.media.ToneGenerator.TONE_PROP_ACK, 135)
+            main.postDelayed({ try { tone.release() } catch (_: Exception) {} }, 210)
+        } catch (_: Exception) {}
+    }
+
+    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat(); setStroke(dp(1), Color.argb(48,255,255,255)) }
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
     private fun removeOverlay() {
         try { root?.let { windowManager?.removeView(it) } } catch (_: Exception) {}
-        root = null; orb = null
+        root = null; orb = null; captionView = null
     }
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onDestroy() {
@@ -178,6 +206,9 @@ class AssistantOverlayService : Service() {
     }
     companion object {
         const val ACTION_SHOW = "com.englishai.app.OVERLAY_SHOW"
+        const val ACTION_ACTIVATED = "com.englishai.app.OVERLAY_ACTIVATED"
+        const val ACTION_TRANSCRIPT = "com.englishai.app.TRANSCRIPT"
+        const val EXTRA_TRANSCRIPT = "transcript_text"
         const val ACTION_CLOSE = "com.englishai.app.OVERLAY_CLOSE"
         const val ACTION_OVERLAY_TEXT = "com.englishai.app.OVERLAY_TEXT"
         const val EXTRA_OVERLAY_TEXT = "com.englishai.app.OVERLAY_TEXT_VALUE"
