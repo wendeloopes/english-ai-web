@@ -21,6 +21,7 @@ class MainActivity : ComponentActivity() {
     private var pauseHotwordForActivation = false
     private var pendingOverlayText = ""
     private var pendingAnkiTsv = ""
+    private var pendingVoiceTrainingPermission = false
     private val pickModel = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) bridge.importModel(uri) }
     private val createAnkiExport = registerForActivityResult(ActivityResultContracts.CreateDocument("text/tab-separated-values")) { uri ->
         if (uri == null) {
@@ -44,8 +45,13 @@ class MainActivity : ComponentActivity() {
         val micGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         val notificationsGranted = android.os.Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-        if (micGranted && notificationsGranted) bridge.setHotwordEnabled(true)
-        else bridge.hotwordPermissionDenied()
+        if (micGranted && notificationsGranted) {
+            if (pendingVoiceTrainingPermission) { pendingVoiceTrainingPermission = false; bridge.startVoiceCalibrationGranted() }
+            else bridge.setHotwordEnabled(true)
+        } else {
+            pendingVoiceTrainingPermission = false
+            bridge.hotwordPermissionDenied()
+        }
     }
     private val firstLaunchPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
         if (results[Manifest.permission.RECORD_AUDIO] == true) {
@@ -55,6 +61,11 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    private fun requestVoiceTrainingRuntimePermissions() {
+        pendingVoiceTrainingPermission = true
+        requestHotwordRuntimePermissions()
+    }
+
     private fun requestHotwordRuntimePermissions() {
         val needed = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
@@ -62,8 +73,10 @@ class MainActivity : ComponentActivity() {
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             needed.add(Manifest.permission.POST_NOTIFICATIONS)
-        if (needed.isEmpty()) bridge.setHotwordEnabled(true)
-        else hotwordPermissions.launch(needed.toTypedArray())
+        if (needed.isEmpty()) {
+            if (pendingVoiceTrainingPermission) { pendingVoiceTrainingPermission = false; bridge.startVoiceCalibrationGranted() }
+            else bridge.setHotwordEnabled(true)
+        } else hotwordPermissions.launch(needed.toTypedArray())
     }
 
     private fun requestFirstLaunchPermissions() {
@@ -125,7 +138,7 @@ class MainActivity : ComponentActivity() {
         bridge = NativeBridge(this, web, { pickModel.launch(arrayOf("*/*")) }, { requestMic() }, { tsv, filename ->
             pendingAnkiTsv = tsv
             createAnkiExport.launch(filename)
-        }, { requestHotwordRuntimePermissions() })
+        }, { requestHotwordRuntimePermissions() }, { requestVoiceTrainingRuntimePermissions() })
         web.addJavascriptInterface(bridge, "NativeBridge")
         setContentView(web)
         web.loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
