@@ -127,6 +127,7 @@ class HotwordListeningService : Service() {
     private var active = false
     private var restarting = false
     private var activationHandled = false
+    @Volatile private var calibrationMode = false
     @Volatile private var voskActive = false
     @Volatile private var voskRecorder: AudioRecord? = null
     @Volatile private var voskModel: Model? = null
@@ -149,6 +150,7 @@ class HotwordListeningService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
+            ACTION_CALIBRATE -> { calibrationMode = true; active = true; restarting = false; acquireHotwordWakeLock(); startRecognition(); return START_STICKY }
             ACTION_PAUSE -> { pauseRecognition(); return START_STICKY }
             ACTION_RESUME, ACTION_START, null -> {
                 activationHandled = false
@@ -299,9 +301,10 @@ class HotwordListeningService : Service() {
         }
         if (!match) return
 
-        // Handle the phrase once, stop recognition before opening the app, and let the
-        // foreground activity own the microphone while the user speaks.
+        // Handle the phrase once and release Vosk's AudioRecord before handing off.
         activationHandled = true
+        val isCalibration = calibrationMode
+        calibrationMode = false
         // When the display is off, give a brief, low-volume confirmation tone only.
         try {
             val power = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -316,15 +319,41 @@ class HotwordListeningService : Service() {
         try { recognizer?.cancel() } catch (_: Exception) {}
         try { recognizer?.destroy() } catch (_: Exception) {}
         recognizer = null
-        postHotwordNotification()
-
-        val launch = Intent(this, MainActivity::class.java).apply {
-            action = ACTION_HOTWORD_DETECTED
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        }
-        try { startActivity(launch) } catch (_: Exception) {
-            // The notification remains the reliable fallback on Android versions that restrict
-            // starting an activity from the background.
+        if (isCalibration) {
+            try {
+                val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 90)
+                tone.startTone(ToneGenerator.TONE_PROP_BEEP2, 180)
+                android.os.Handler(mainLooper).postDelayed({ tone.release() }, 260)
+            } catch (_: Exception) {}
+            try {
+                val greeting = TextToSpeech(this) { status ->
+                    if (status == TextToSpeech.SUCCESS) {
+                        greeting?.language = Locale.US
+                        greeting?.speak("I'm ready!", TextToSpeech.QUEUE_FLUSH, null, "english-ai-calibrated")
+                        android.os.Handler(mainLooper).postDelayed({ try { greeting?.shutdown() } catch (_: Exception) {} }, 2200)
+                    }
+                }
+            } catch (_: Exception) {}
+            val success = Intent(this, MainActivity::class.java).apply {
+                action = ACTION_CALIBRATION_SUCCESS
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            try { startActivity(success) } catch (_: Exception) {}
+        } else {
+            val overlayAllowed = if (Build.VERSION.SDK_INT >= 23) android.provider.Settings.canDrawOverlays(this) else true
+            if (overlayAllowed) {
+                try {
+                    val overlay = Intent(this, AssistantOverlayService::class.java).setAction(AssistantOverlayService.ACTION_SHOW)
+                    if (Build.VERSION.SDK_INT >= 26) startForegroundService(overlay) else startService(overlay)
+                } catch (_: Exception) { postHotwordNotification() }
+            } else {
+                postHotwordNotification()
+                val launch = Intent(this, MainActivity::class.java).apply {
+                    action = ACTION_HOTWORD_DETECTED
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                }
+                try { startActivity(launch) } catch (_: Exception) {}
+            }
         }
         android.os.Handler(mainLooper).postDelayed({
             // If Android blocked the activity launch, keep the hands-free trigger available.
@@ -388,6 +417,8 @@ class HotwordListeningService : Service() {
         const val ACTION_PAUSE = "com.englishai.app.HOTWORD_PAUSE"
         const val ACTION_RESUME = "com.englishai.app.HOTWORD_RESUME"
         const val ACTION_HOTWORD_DETECTED = "com.englishai.app.HOTWORD_DETECTED"
+        const val ACTION_CALIBRATE = "com.englishai.app.HOTWORD_CALIBRATE"
+        const val ACTION_CALIBRATION_SUCCESS = "com.englishai.app.HOTWORD_CALIBRATION_SUCCESS"
     }
 }
 
