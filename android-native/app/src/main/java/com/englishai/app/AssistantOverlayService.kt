@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -35,20 +37,35 @@ class AssistantOverlayService : Service() {
     private var root: FrameLayout? = null
     private var orb: VoiceOrb? = null
     private val main = Handler(Looper.getMainLooper())
-    private var amplitude = 0f
+    @Volatile private var amplitude = 0f
+    private var levelReceiverRegistered = false
+    private val levelReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_AUDIO_LEVEL) {
+                amplitude = intent.getFloatExtra(EXTRA_AUDIO_LEVEL, 0f).coerceIn(0f, 1f)
+                orb?.invalidate()
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
-        // Visual-only overlay. It must not start a microphone foreground service
-        // from a background hotword callback on Android 14+.
+        // Visual-only overlay. Audio levels come from the existing foreground hotword
+        // service; this overlay never opens the microphone itself.
+        val filter = IntentFilter(ACTION_AUDIO_LEVEL)
+        try {
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(levelReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            else registerReceiver(levelReceiver, filter)
+            levelReceiverRegistered = true
+        } catch (_: Exception) {}
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_CLOSE) { removeOverlay(); stopSelf(); return START_NOT_STICKY }
         if (Build.VERSION.SDK_INT >= 23 && !android.provider.Settings.canDrawOverlays(this)) { stopSelf(); return START_NOT_STICKY }
         if (root == null) showOverlay()
         try {
-            val tone = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 85)
-            tone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 125)
+            val tone = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 62)
+            tone.startTone(android.media.ToneGenerator.TONE_PROP_ACK, 145)
             main.postDelayed({ try { tone.release() } catch (_: Exception) {} }, 220)
         } catch (_: Exception) {}
         return START_NOT_STICKY
@@ -58,7 +75,7 @@ class AssistantOverlayService : Service() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         val container = FrameLayout(this).apply { setBackgroundColor(Color.TRANSPARENT) }
         val sphere = VoiceOrb(this) { amplitude }.also { orb = it }
-        val sphereParams = FrameLayout.LayoutParams(320, 360, Gravity.CENTER)
+        val sphereParams = FrameLayout.LayoutParams(dp(260), dp(290), Gravity.CENTER)
         container.addView(sphere, sphereParams)
 
         val title = TextView(this).apply {
@@ -123,6 +140,10 @@ class AssistantOverlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onDestroy() {
         removeOverlay()
+        if (levelReceiverRegistered) {
+            try { unregisterReceiver(levelReceiver) } catch (_: Exception) {}
+            levelReceiverRegistered = false
+        }
         val prefs = getSharedPreferences("english_ai_user_settings", MODE_PRIVATE)
         if (prefs.getBoolean("hotwordEnabled", false)) {
             try {
@@ -139,18 +160,19 @@ class AssistantOverlayService : Service() {
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             val cx = width / 2f; val cy = height / 2f
-            val pulse = 1f + level() * .25f + kotlin.math.sin(phase) * .025f
-            val r = min(width, height) * .31f * pulse
+            val energy = level().coerceIn(0f, 1f)
+            val pulse = 1f + energy * .32f + kotlin.math.sin(phase) * .035f
+            val r = min(width, height) * .28f * pulse
             paint.shader = RadialGradient(cx-r*.18f, cy-r*.24f, r*1.45f,
-                intArrayOf(Color.rgb(220,205,255), Color.rgb(114,80,255), Color.rgb(29,13,76), Color.TRANSPARENT),
+                intArrayOf(Color.argb(210, 220,205,255), Color.argb(185, 114,80,255), Color.argb(135, 29,13,76), Color.TRANSPARENT),
                 floatArrayOf(0f,.28f,.72f,1f), Shader.TileMode.CLAMP)
-            canvas.drawCircle(cx, cy, r*1.5f, paint)
+            canvas.drawCircle(cx, cy, r*1.42f, paint)
             paint.shader = null
-            paint.style = Paint.Style.STROKE; paint.strokeWidth = 2f + level()*7f
-            paint.color = Color.argb((75+level()*140).toInt().coerceIn(0,220), 185,160,255)
-            canvas.drawCircle(cx, cy, r*(1.22f + level()*.3f), paint)
+            paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.5f + energy*5f
+            paint.color = Color.argb((42+energy*105).toInt().coerceIn(0,160), 185,160,255)
+            canvas.drawCircle(cx, cy, r*(1.18f + energy*.34f), paint)
             paint.style = Paint.Style.FILL
-            phase += .045f + level()*.06f
+            phase += .045f + energy*.10f
             postInvalidateDelayed(32)
         }
     }
@@ -159,5 +181,7 @@ class AssistantOverlayService : Service() {
         const val ACTION_CLOSE = "com.englishai.app.OVERLAY_CLOSE"
         const val ACTION_OVERLAY_TEXT = "com.englishai.app.OVERLAY_TEXT"
         const val EXTRA_OVERLAY_TEXT = "com.englishai.app.OVERLAY_TEXT_VALUE"
+        const val ACTION_AUDIO_LEVEL = "com.englishai.app.AUDIO_LEVEL"
+        const val EXTRA_AUDIO_LEVEL = "audio_level"
     }
 }
