@@ -871,7 +871,7 @@ $('saveRoutine').onclick=saveRoutineSettings;
     '<div style="height:1px;background:var(--line,#333)"></div>'+
     '<label style="display:flex;align-items:center;gap:10px"><input id="hotwordToggle" type="checkbox" style="width:20px;height:20px"> <span><b>“Hi, English AI!” activation</b><br><small>Uses the microphone while a permanent Android notification is visible.</small></span></label>'+
     '<div id="hotwordStatus" style="font-size:12px;opacity:.8">Voice activation is off.</div>'+
-    '<small style="opacity:.72">Hotword detection depends on Android speech recognition and battery settings. It is not covert listening; turn it off here or from the notification.</small>';
+    '<small style="opacity:.72">The “Hi, English AI” trigger uses the Vosk model on this device only. Download the offline speech engine first, allow microphone and notification permissions, then enable the trigger. Android may restrict microphone startup at boot; re-enable it from the app if the service was stopped. Turn it off here or from the persistent notification.</small>';
   $('saveRoutine').insertAdjacentElement('afterend',box);
   const alarm=$('morningAlarmToggle'),hotword=$('hotwordToggle');
   const offlineBtn=$('offlineSpeechDownload'),offlineStatus=$('offlineSpeechStatus');
@@ -882,7 +882,7 @@ $('saveRoutine').onclick=saveRoutineSettings;
       if(NativeBridge.isOfflineSpeechModelInstalled()){
         offlineStatus.textContent='Offline English speech engine is installed and ready.';
         offlineBtn.textContent='Downloaded ✓';offlineBtn.disabled=true;
-      }else offlineStatus.textContent='Not installed. Download once while connected to the internet.';
+      }else offlineStatus.textContent='Not installed. Download once while connected to the internet; the hotword stays disabled until this model is ready.';
     }catch(e){offlineStatus.textContent='Available in the native Android app.'}
   }else{offlineStatus.textContent='This feature requires the native Android app.';offlineBtn.disabled=true}
   offlineBtn.addEventListener('click',()=>{
