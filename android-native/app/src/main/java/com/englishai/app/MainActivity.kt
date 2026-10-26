@@ -18,21 +18,26 @@ class MainActivity : ComponentActivity() {
     companion object {
         @Volatile private var activeInstance: MainActivity? = null
 
-        /** Dispatch activation into the live WebView so its local model/TTS flow actually starts. */
+        /** Bring the WebView to the foreground before dispatching activation.
+         * Calling JavaScript directly on a background Activity can leave the assistant
+         * listening in the background without a reliable audible response. */
         fun notifyHotwordActivation(context: Context) {
-            val current = activeInstance
-            if (current != null && current.pageReady && current::web.isInitialized) {
-                current.runOnUiThread {
-                    current.web.evaluateJavascript("window.Native && window.Native.onHotwordActivated && window.Native.onHotwordActivated()", null)
-                }
-                return
-            }
             val launch = Intent(context, MainActivity::class.java).apply {
                 action = HotwordListeningService.ACTION_HOTWORD_DETECTED
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             }
-            try { context.startActivity(launch) } catch (e: Exception) {
+            try {
+                context.startActivity(launch)
+            } catch (e: Exception) {
                 android.util.Log.e("EnglishAI-VoiceTraining", "Could not bring assistant WebView to activation flow", e)
+                // If Android blocks foregrounding but the WebView is already alive, make
+                // one best-effort dispatch so activation is not silently lost.
+                val current = activeInstance
+                if (current != null && current.pageReady && current::web.isInitialized) {
+                    current.runOnUiThread {
+                        current.web.evaluateJavascript("window.Native && window.Native.onHotwordActivated && window.Native.onHotwordActivated()", null)
+                    }
+                }
             }
         }
     }
