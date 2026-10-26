@@ -352,6 +352,7 @@ class HotwordListeningService : Service() {
                     if (text.isNotEmpty()) {
                         sendBroadcast(Intent(AssistantOverlayService.ACTION_TRANSCRIPT)
                             .setPackage(packageName).putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT, text)
+                            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_SOURCE, AssistantOverlayService.SOURCE_USER)
                             .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_FINAL, isFinal))
                     }
                 }
