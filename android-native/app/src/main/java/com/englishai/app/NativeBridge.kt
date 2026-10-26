@@ -84,6 +84,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         if (clean.isEmpty()) return
         val intent = Intent(AssistantOverlayService.ACTION_TRANSCRIPT).setPackage(activity.packageName)
             .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT, clean)
+            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_SOURCE, AssistantOverlayService.SOURCE_TUTOR)
             .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_INDEX, charIndex.coerceIn(-1, clean.length))
             .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_FINAL, charIndex < 0)
         try { activity.sendBroadcast(intent) } catch (_: Exception) {}
