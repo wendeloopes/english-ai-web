@@ -160,7 +160,18 @@ class AssistantOverlayService : Service() {
         root = null; orb = null
     }
     override fun onBind(intent: Intent?): IBinder? = null
-    override fun onDestroy() { removeOverlay(); stopForeground(STOP_FOREGROUND_REMOVE); super.onDestroy() }
+    override fun onDestroy() {
+        removeOverlay()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        val prefs = getSharedPreferences("english_ai_user_settings", MODE_PRIVATE)
+        if (prefs.getBoolean("hotwordEnabled", false)) {
+            try {
+                val restart = Intent(this, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_RESUME)
+                if (Build.VERSION.SDK_INT >= 26) startForegroundService(restart) else startService(restart)
+            } catch (_: Exception) {}
+        }
+        super.onDestroy()
+    }
 
     private class VoiceOrb(context: Context, private val level: () -> Float) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
