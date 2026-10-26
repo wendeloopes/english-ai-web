@@ -28,7 +28,7 @@ import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.Executors
 
-class NativeBridge(private val activity: Activity, private val web: WebView, private val choose: () -> Unit, private val requestMic: () -> Unit, private val exportTsv: (String, String) -> Unit) {
+class NativeBridge(private val activity: Activity, private val web: WebView, private val choose: () -> Unit, private val requestMic: () -> Unit, private val exportTsv: (String, String) -> Unit, private val requestHotwordPermissions: () -> Unit) {
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private val engine = LiteRtEngine(activity)
@@ -219,7 +219,7 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     @JavascriptInterface fun isHotwordEnabled(): Boolean =
         activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE).getBoolean("hotwordEnabled", false)
 
-    /** Start hotword only from the visible app after the user explicitly enables it. */
+    /** Start the Vosk-only hotword service only after runtime permissions and its model are ready. */
     @JavascriptInterface fun setHotwordEnabled(enabled: Boolean) {
         val prefs = activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
         if (!enabled) {
@@ -228,30 +228,32 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
             call("onHotwordStatus", "false", JSONObject.quote("Voice activation stopped."))
             return
         }
-        if (activity.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            call("onHotwordStatus", "false", JSONObject.quote("Microphone permission is required. Grant it in Android app settings, then enable voice activation again."))
+        if (activity.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            (Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)) {
+            call("onHotwordStatus", "false", JSONObject.quote("Android will ask for microphone and notification permissions before enabling the offline trigger."))
+            main.post { requestHotwordPermissions() }
             return
         }
-        if (Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            call("onHotwordStatus", "false", JSONObject.quote("Notifications must be enabled so Android can show the persistent microphone indicator. Allow notifications, then enable voice activation again."))
-            main.post {
-                try {
-                    val settingsIntent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                    settingsIntent.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, activity.packageName)
-                    activity.startActivity(settingsIntent)
-                } catch (_: Exception) {}
-            }
+        if (!offlineSpeech.isInstalled()) {
+            prefs.edit().putBoolean("hotwordEnabled", false).apply()
+            call("onHotwordStatus", "false", JSONObject.quote("The “Hi, English AI” trigger requires the Vosk offline English model. Tap “Download offline speech engine” first (one-time download, about 40 MB), then enable the trigger."))
             return
         }
         try {
             prefs.edit().putBoolean("hotwordEnabled", true).apply()
             val intent = Intent(activity, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_START)
             if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(intent) else activity.startService(intent)
-            call("onHotwordStatus", "true", JSONObject.quote("Voice activation is on. A persistent notification will remain visible while the microphone is active."))
+            call("onHotwordStatus", "true", JSONObject.quote("Vosk offline trigger enabled. Keep the persistent notification visible; microphone audio stays on this device."))
         } catch (e: Exception) {
             prefs.edit().putBoolean("hotwordEnabled", false).apply()
-            call("onHotwordStatus", "false", JSONObject.quote(e.message ?: "Could not start voice activation. Keep English AI open and try again."))
+            call("onHotwordStatus", "false", JSONObject.quote(e.message ?: "Could not start the Vosk hotword service. Keep English AI open and try again."))
         }
+    }
+
+    fun hotwordPermissionDenied() {
+        activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
+            .edit().putBoolean("hotwordEnabled", false).apply()
+        call("onHotwordStatus", "false", JSONObject.quote("Voice activation was not enabled because the required microphone/notification permission was denied."))
     }
 
     /** Shown in Settings so you can confirm which build is installed. */
@@ -579,39 +581,45 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     @JavascriptInterface fun startListening() { main.post { requestMic() } }
     fun startListeningGranted() {
         main.post {
-            // A hotword recognizer must release the microphone before push-to-talk starts.
-            if (activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
-                    .getBoolean("hotwordEnabled", false)) {
+            val hotwordEnabled = activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
+                .getBoolean("hotwordEnabled", false)
+            if (hotwordEnabled) {
+                // Let the service process ACTION_PAUSE and release AudioRecord before opening Vosk
+                // for the user's actual utterance. Opening both recorders concurrently loses the mic.
                 try { activity.startService(Intent(activity, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_PAUSE)) } catch (_: Exception) {}
-            }
-            if (listening || listeningStartupPending) return@post
-            speechDisconnectRetries = 0
-            // Prefer the separately installed Vosk engine. It does not use Android's broken
-            // Speech Recognition service and never sends audio off-device.
-            if (offlineSpeech.isInstalled()) {
-                try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) {}
-                recognizer = null
-                try { tts?.stop() } catch (_: Exception) {}
-                listeningStartupPending = false
-                offlineSpeech.start()
+                main.postDelayed({ startListeningAfterHotwordPause() }, 350)
                 return@post
             }
-            if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
-                call("onSpeechError", JSONObject.quote("No speech recognition service is available. Check Android's Speech Recognition settings."))
-                return@post
-            }
-            // Stop English speech playback before opening the microphone, then allow audio routing to settle.
-            try { tts?.stop() } catch (_: Exception) {}
-            listeningStartupPending = true
-            main.postDelayed({
-                if (listening) { listeningStartupPending = false; return@postDelayed }
-                if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)) {
-                    beginListening(useOnDevice = true)
-                } else {
-                    beginListening(useOnDevice = false)
-                }
-            }, 180)
+            startListeningAfterHotwordPause()
         }
+    }
+
+    private fun startListeningAfterHotwordPause() {
+        if (listening || listeningStartupPending) return
+        speechDisconnectRetries = 0
+        // Prefer the separately installed Vosk engine. It does not use Android's speech service.
+        if (offlineSpeech.isInstalled()) {
+            try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) {}
+            recognizer = null
+            try { tts?.stop() } catch (_: Exception) {}
+            listeningStartupPending = false
+            offlineSpeech.start()
+            return
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
+            call("onSpeechError", JSONObject.quote("No speech recognition service is available. Check Android's Speech Recognition settings."))
+            return
+        }
+        try { tts?.stop() } catch (_: Exception) {}
+        listeningStartupPending = true
+        main.postDelayed({
+            if (listening) { listeningStartupPending = false; return@postDelayed }
+            if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)) {
+                beginListening(useOnDevice = true)
+            } else {
+                beginListening(useOnDevice = false)
+            }
+        }, 180)
     }
 
     private fun beginListening(useOnDevice: Boolean) {
