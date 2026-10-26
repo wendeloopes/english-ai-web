@@ -283,6 +283,37 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         call("onHotwordStatus", "false", JSONObject.quote("Voice activation was not enabled because the required microphone/notification permission was denied."))
     }
 
+    /** Starts the on-device trigger calibration flow; the user must grant overlay access in Android settings first. */
+    @JavascriptInterface fun startVoiceCalibration() {
+        if (activity.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            (Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)) {
+            main.post { requestHotwordPermissions() }
+            call("onVoiceCalibrationStatus", "false", JSONObject.quote("Allow microphone and notification permissions, then tap Train again."))
+            return
+        }
+        if (!offlineSpeech.isInstalled()) {
+            call("onVoiceCalibrationStatus", "false", JSONObject.quote("Download the Vosk offline speech engine first."))
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 23 && !android.provider.Settings.canDrawOverlays(activity)) {
+            call("onVoiceCalibrationStatus", "false", JSONObject.quote("Enable Display over other apps for English AI, return here, and tap Train again."))
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + activity.packageName))
+                activity.startActivity(intent)
+            } catch (_: Exception) {}
+            return
+        }
+        try {
+            val prefs = activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("hotwordEnabled", true).apply()
+            val intent = Intent(activity, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_CALIBRATE)
+            if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(intent) else activity.startService(intent)
+            call("onVoiceCalibrationStatus", "false", JSONObject.quote("Listening for “Hi English AI”… say the phrase clearly."))
+        } catch (e: Exception) {
+            call("onVoiceCalibrationStatus", "false", JSONObject.quote(e.message ?: "Could not start calibration."))
+        }
+    }
+
     /** Shown in Settings so you can confirm which build is installed. */
     @JavascriptInterface fun getInfo(): String {
         val v = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName } catch (_: Exception) { "?" }
