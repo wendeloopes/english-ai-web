@@ -47,10 +47,15 @@ class VoskOfflineSpeech(
      * If no model is bundled, the existing explicit download flow remains available.
      */
     @Synchronized private fun installBundledModelIfPresent(): Boolean {
-        if (File(modelDir, "am").isDirectory && File(modelDir, "conf").isDirectory && File(modelDir, "graph").isDirectory) return true
+        if (File(modelDir, "am").isDirectory && File(modelDir, "conf").isDirectory && File(modelDir, "graph").isDirectory) {
+            android.util.Log.d("VoskOfflineSpeech", "Model already exists in internal storage: ${modelDir.absolutePath}")
+            return true
+        }
+        android.util.Log.d("VoskOfflineSpeech", "Model directory missing/incomplete; attempting bundled asset installation into ${modelDir.absolutePath}")
         val assets = context.assets
         return try {
             val rootEntries = assets.list("")?.toSet().orEmpty()
+            android.util.Log.d("VoskOfflineSpeech", "Asset root entries: ${rootEntries.joinToString()}")
             if ("vosk-model-en-us.zip" in rootEntries) {
                 tempDir.deleteRecursively()
                 tempDir.mkdirs()
@@ -101,6 +106,7 @@ class VoskOfflineSpeech(
                 }
                 tempDir.deleteRecursively()
             }
+            android.util.Log.w("VoskOfflineSpeech", "No complete bundled Vosk model found in assets; user download remains available")
             false
         } catch (e: Exception) {
             android.util.Log.e("VoskOfflineSpeech", "Bundled Vosk asset installation failed", e)
