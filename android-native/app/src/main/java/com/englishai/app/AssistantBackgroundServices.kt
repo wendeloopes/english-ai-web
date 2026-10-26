@@ -366,7 +366,7 @@ class HotwordListeningService : Service() {
                 active = false // The overlay owns the mic until it closes, then it resumes Vosk.
                 try {
                     val overlay = Intent(this, AssistantOverlayService::class.java).setAction(AssistantOverlayService.ACTION_SHOW)
-                    if (Build.VERSION.SDK_INT >= 26) startForegroundService(overlay) else startService(overlay)
+                    startService(overlay)
                 } catch (_: Exception) { postHotwordNotification() }
             } else {
                 postHotwordNotification()
