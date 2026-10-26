@@ -28,6 +28,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import kotlin.math.max
 import kotlin.math.min
 
@@ -180,10 +182,10 @@ class AssistantOverlayService : Service() {
             android.graphics.PixelFormat.TRANSLUCENT).apply {
             gravity = Gravity.TOP or Gravity.START
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-            dimAmount = 0.035f
+            dimAmount = 0.012f
             if (Build.VERSION.SDK_INT >= 31) {
                 flags = flags or LayoutParams.FLAG_BLUR_BEHIND
-                setBlurBehindRadius(dp(12))
+                setBlurBehindRadius(dp(6))
             }
         }
         try { windowManager?.addView(container, params) } catch (_: Exception) { root = null; stopSelf() }
@@ -192,6 +194,28 @@ class AssistantOverlayService : Service() {
 
 
     private fun playActivationTone() {
+        // Play the user-supplied chirp/glitch MP3. The short system tone is only a fallback
+        // for devices where the packaged audio asset cannot be read.
+        try {
+            val encoded = assets.open("activation_confirmation.b64").bufferedReader().use { it.readText().trim() }
+            val bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+            val soundFile = java.io.File(cacheDir, "activation_confirmation.mp3")
+            soundFile.writeBytes(bytes)
+            val player = MediaPlayer()
+            player.setAudioAttributes(AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+            player.setDataSource(soundFile.absolutePath)
+            player.setOnCompletionListener { try { it.release() } catch (_: Exception) {} }
+            player.setOnErrorListener { mp, _, _ -> try { mp.release() } catch (_: Exception) {}; playFallbackTone(); true }
+            player.setOnPreparedListener { it.start() }
+            player.prepareAsync()
+        } catch (_: Exception) {
+            playFallbackTone()
+        }
+    }
+
+    private fun playFallbackTone() {
         try {
             val tone = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 48)
             tone.startTone(android.media.ToneGenerator.TONE_PROP_ACK, 135)
@@ -238,15 +262,15 @@ class AssistantOverlayService : Service() {
             // Soft, translucent aura with a brighter center and a feathered edge.
             paint.style = Paint.Style.FILL
             paint.shader = RadialGradient(cx-r*.18f, cy-r*.24f, r*1.48f,
-                intArrayOf(Color.argb(172, 220,205,255), Color.argb(142, 114,80,255), Color.argb(92, 29,13,76), Color.TRANSPARENT),
-                floatArrayOf(0f,.28f,.72f,1f), Shader.TileMode.CLAMP)
-            canvas.drawCircle(cx, cy, r*1.48f, paint)
+                intArrayOf(Color.argb(250, 118,226,255), Color.argb(242, 48,132,255), Color.argb(222, 112,55,255), Color.argb(112, 26,22,112), Color.TRANSPARENT),
+                floatArrayOf(0f,.20f,.46f,.76f,1f), Shader.TileMode.CLAMP)
+            canvas.drawCircle(cx, cy, r*1.38f, paint)
             paint.shader = null
 
             // Fine animated contour and small orbiting light particles.
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 1.2f + energy*3.2f
-            paint.color = Color.argb((34+energy*94).toInt().coerceIn(0,135), 185,160,255)
+            paint.color = Color.argb((105+energy*120).toInt().coerceIn(0,225), 72,190,255)
             canvas.drawCircle(cx, cy, r*(1.16f + energy*.28f), paint)
             paint.style = Paint.Style.FILL
             val density = resources.displayMetrics.density
@@ -256,7 +280,7 @@ class AssistantOverlayService : Service() {
                 val px = cx + kotlin.math.cos(angle).toFloat() * orbit
                 val py = cy + kotlin.math.sin(angle).toFloat() * orbit
                 val dot = density * (1.1f + ((i % 3) * .45f) + energy * 1.2f)
-                paint.color = Color.argb((45 + energy*135).toInt().coerceIn(0,185), 218,207,255)
+                paint.color = Color.argb((135 + energy*115).toInt().coerceIn(0,250), 155,235,255)
                 canvas.drawCircle(px, py, dot, paint)
             }
             phase += .045f + energy*.10f
