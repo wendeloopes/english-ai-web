@@ -460,8 +460,12 @@ class HotwordListeningService : Service() {
                 try {
                     val overlay = Intent(this, AssistantOverlayService::class.java).setAction(AssistantOverlayService.ACTION_ACTIVATED)
                     startService(overlay)
-                    // Wait for the hotword AudioRecord to be released before starting full Vosk transcription.
-                    android.os.Handler(mainLooper).postDelayed({ if (!active) startVoskCaptioning() }, 500)
+                    // The floating overlay is visual only. Dispatch into the app's WebView so
+                    // its on-device model can greet the user, then listen for the actual request.
+                    // Do not start a second AudioRecord here: NativeBridge owns conversation capture.
+                    android.os.Handler(mainLooper).postDelayed({
+                        if (!active) MainActivity.notifyHotwordActivation(this)
+                    }, 350)
                 } catch (_: Exception) { postHotwordNotification() }
             } else {
                 postHotwordNotification()
