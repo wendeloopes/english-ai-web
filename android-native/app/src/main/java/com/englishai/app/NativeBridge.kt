@@ -79,12 +79,13 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     }
     @JavascriptInterface fun exitApp() { main.post { activity.finish() } }
     /** Forward the English sentence currently spoken by the in-app tutor to the visual overlay. */
-    @JavascriptInterface fun setOverlayCaption(text: String) {
+    @JavascriptInterface fun setOverlayCaption(text: String, charIndex: Int) {
         val clean = text.trim().take(400)
         if (clean.isEmpty()) return
         val intent = Intent(AssistantOverlayService.ACTION_TRANSCRIPT).setPackage(activity.packageName)
             .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT, clean)
-            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_FINAL, true)
+            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_INDEX, charIndex.coerceIn(-1, clean.length))
+            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_FINAL, charIndex < 0)
         try { activity.sendBroadcast(intent) } catch (_: Exception) {}
     }
     private fun call(name: String, vararg args: String) { val code = "window.Native && window.Native." + name + " && window.Native." + name + "(" + args.joinToString(",") + ")"; main.post { web.evaluateJavascript(code, null) } }
