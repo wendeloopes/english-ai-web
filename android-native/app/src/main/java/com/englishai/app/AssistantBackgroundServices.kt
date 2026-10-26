@@ -223,6 +223,7 @@ class HotwordListeningService : Service() {
                 audio.startRecording()
                 android.util.Log.d("EnglishAI-VoiceTraining", "AudioRecord started state=${audio.state}, recordingState=${audio.recordingState}")
                 val buffer = ShortArray(4096)
+                var lastLevelBroadcast = 0L
                 while (active && voskActive) {
                     val count = audio.read(buffer, 0, buffer.size)
                     if (count < 0) {
@@ -230,6 +231,24 @@ class HotwordListeningService : Service() {
                         throw IllegalStateException("Vosk microphone stream stopped (AudioRecord error $count). Re-enable voice activation and check microphone access.")
                     }
                     if (count == 0) continue
+                    // Send a throttled RMS audio level to the visual orb. The overlay
+                    // receives data only and never opens its own microphone.
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - lastLevelBroadcast >= 80L) {
+                        var sumSquares = 0.0
+                        for (i in 0 until count) {
+                            val sample = buffer[i].toDouble()
+                            sumSquares += sample * sample
+                        }
+                        val rms = kotlin.math.sqrt(sumSquares / count).toFloat()
+                        val normalized = (rms / 9000f).coerceIn(0f, 1f)
+                        try {
+                            sendBroadcast(Intent(AssistantOverlayService.ACTION_AUDIO_LEVEL)
+                                .setPackage(packageName)
+                                .putExtra(AssistantOverlayService.EXTRA_AUDIO_LEVEL, normalized))
+                        } catch (_: Exception) {}
+                        lastLevelBroadcast = now
+                    }
                     val bytes = ByteArray(count * 2)
                     for (i in 0 until count) {
                         val sample = buffer[i].toInt()
