@@ -772,9 +772,26 @@ if (window.NativeBridge) {
   stopAll = function(){ nativeTranslationId=''; nativeTranslationBubble=null; gen++; q=[]; talking=false; busy=false; NativeBridge.cancelGenerate(); NativeBridge.stopSpeaking(); if(nativeListening)NativeBridge.cancelListening(); nativeListening=false; rec=null; persist(); setState('idle'); };
   listen = async function(){ if(state==='listening')return; stopAll(); heard=''; nativeListening=true; setState('listening'); cap('<span class="you">Say something in English…</span>'); NativeBridge.startListening(); };
   window.Native.onVoiceCalibrationStatus = (ok,message) => { const el=$('voiceCalibrationStatus'); if(el&&message)el.textContent=message; if(el)el.style.color=ok?'#8dffbd':'#d9ccff'; };
-  window.Native.onVoiceCalibrationSuccess = () => { const el=$('voiceCalibrationStatus'); if(el){el.textContent='Voz calibrada com sucesso!';el.style.color='#8dffbd';} toast('Voz calibrada com sucesso!'); };
+  window.Native.onVoiceCalibrationSuccess = () => {
+    const el=$('voiceCalibrationStatus');
+    if(el){el.textContent='Voz calibrada com sucesso! Frase “Hi English AI” reconhecida.';el.style.color='#8dffbd';}
+    toast("Voz reconhecida! I'm ready!");
+    try {
+      const Ctx=window.AudioContext||window.webkitAudioContext;
+      if(Ctx){const ctx=new Ctx(),osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sine';osc.frequency.setValueAtTime(1320,ctx.currentTime);osc.frequency.exponentialRampToValueAtTime(1760,ctx.currentTime+0.09);gain.gain.setValueAtTime(0.0001,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(0.18,ctx.currentTime+0.015);gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.22);osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+0.23);setTimeout(()=>ctx.close(),400);}
+    } catch(e) { console.debug('[VoiceTraining] WebAudio plin unavailable',e); }
+    try { if(NB&&typeof NativeBridge.speak==='function') NativeBridge.speak('voice-training-ready', "I'm ready!", '1.0', ''); }
+    catch(e) { console.debug('[VoiceTraining] Native TTS failed',e); }
+  };
   window.Native.onOverlayText = text => { try{go('chat');$('inp').value=String(text||'');$('inp').focus();setTimeout(()=>{const btn=$('send');if(btn)btn.click()},250);}catch(e){} };
-  $('trainVoiceButton')?.addEventListener('click',()=>{ if(NB&&typeof NativeBridge.startVoiceCalibration==='function')NativeBridge.startVoiceCalibration(); else {const el=$('voiceCalibrationStatus');if(el)el.textContent='A calibração exige a versão Android nativa e o modelo Vosk instalado.';} });
+  $('trainVoiceButton')?.addEventListener('click',()=>{
+    const el=$('voiceCalibrationStatus');
+    if(el){el.textContent='Iniciando treino de voz…';el.style.color='';}
+    console.debug('[VoiceTraining] Train button clicked; NativeBridge available:',!!NB);
+    if(NB&&typeof NativeBridge.startVoiceTraining==='function') NativeBridge.startVoiceTraining();
+    else if(NB&&typeof NativeBridge.startVoiceCalibration==='function') NativeBridge.startVoiceCalibration();
+    else {if(el)el.textContent='Falha: a ponte nativa de treino de voz não está disponível nesta versão.';console.error('[VoiceTraining] Missing NativeBridge.startVoiceTraining/startVoiceCalibration');}
+  });
   window.Native.onHotwordActivated = () => {
     if(state==='listening') return;
     // Quiet, short confirmation tone plus visual listening ripple while the app is visible.
