@@ -209,6 +209,7 @@ class AssistantOverlayService : Service() {
         const val ACTION_ACTIVATED = "com.englishai.app.OVERLAY_ACTIVATED"
         const val ACTION_TRANSCRIPT = "com.englishai.app.TRANSCRIPT"
         const val EXTRA_TRANSCRIPT = "transcript_text"
+        const val EXTRA_TRANSCRIPT_FINAL = "transcript_final"
         const val ACTION_CLOSE = "com.englishai.app.OVERLAY_CLOSE"
         const val ACTION_OVERLAY_TEXT = "com.englishai.app.OVERLAY_TEXT"
         const val EXTRA_OVERLAY_TEXT = "com.englishai.app.OVERLAY_TEXT_VALUE"
