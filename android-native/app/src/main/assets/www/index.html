@@ -794,12 +794,12 @@ if (window.NativeBridge) {
     else {if(el)el.textContent='Falha: a ponte nativa de treino de voz não está disponível nesta versão.';console.error('[VoiceTraining] Missing NativeBridge.startVoiceTraining/startVoiceCalibration');}
   });
   window.Native.onHotwordActivated = () => {
-    if(state==='listening') return;
+    // Reset any stale WebView listening/generation state first. Otherwise a previous
+    // listening state can cause the activation callback to return without speaking.
+    stopAll();
     $('voice').classList.add('voice-activated');
-    if(state==='thinking'||state==='speaking') stopAll();
     go('voice');
-    // Speak a clear audible acknowledgement first; begin microphone capture only after
-    // TTS completes so the assistant does not transcribe its own greeting.
+    // Always acknowledge a valid voice activation aloud, then open the mic for the request.
     listenAfterActivationGreeting=true;
     q.unshift("I'm here. What would you like to practice?");
     pump();
