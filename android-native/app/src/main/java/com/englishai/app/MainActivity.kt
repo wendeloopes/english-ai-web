@@ -124,7 +124,12 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.action == HotwordListeningService.ACTION_HOTWORD_DETECTED) {
+        if (intent.action == HotwordListeningService.ACTION_CALIBRATION_SUCCESS) {
+            if (::web.isInitialized) web.postDelayed({ web.evaluateJavascript("window.Native && window.Native.onVoiceCalibrationSuccess && window.Native.onVoiceCalibrationSuccess()", null) }, 250)
+        } else if (intent.action == AssistantOverlayService.ACTION_OVERLAY_TEXT) {
+            val text = intent.getStringExtra(AssistantOverlayService.EXTRA_OVERLAY_TEXT).orEmpty()
+            if (::web.isInitialized) web.postDelayed({ web.evaluateJavascript("window.Native && window.Native.onOverlayText && window.Native.onOverlayText(" + org.json.JSONObject.quote(text) + ")", null) }, 350)
+        } else if (intent.action == HotwordListeningService.ACTION_HOTWORD_DETECTED) {
             pendingHotwordActivation = true
             // Also pause immediately when this Activity is already in the foreground;
             // onNewIntent does not guarantee another onResume callback.
