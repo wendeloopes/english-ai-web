@@ -150,7 +150,7 @@ class HotwordListeningService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
-            ACTION_CALIBRATE -> { calibrationMode = true; active = true; restarting = false; acquireHotwordWakeLock(); startRecognition(); return START_STICKY }
+            ACTION_CALIBRATE -> { calibrationMode = true; active = true; restarting = false; acquireHotwordWakeLock(); stopVoskHotword(); android.os.Handler(mainLooper).postDelayed({ startRecognition() }, 250); return START_STICKY }
             ACTION_PAUSE -> { pauseRecognition(); return START_STICKY }
             ACTION_RESUME, ACTION_START, null -> {
                 activationHandled = false
@@ -316,6 +316,7 @@ class HotwordListeningService : Service() {
         } catch (_: Exception) {}
         restarting = true
         stopVoskHotword()
+        if (!isCalibration) active = false // The overlay owns the mic until it closes.
         try { recognizer?.cancel() } catch (_: Exception) {}
         try { recognizer?.destroy() } catch (_: Exception) {}
         recognizer = null
@@ -326,7 +327,8 @@ class HotwordListeningService : Service() {
                 android.os.Handler(mainLooper).postDelayed({ tone.release() }, 260)
             } catch (_: Exception) {}
             try {
-                val greeting = TextToSpeech(this) { status ->
+                var greeting: TextToSpeech? = null
+                greeting = TextToSpeech(this) { status ->
                     if (status == TextToSpeech.SUCCESS) {
                         greeting?.language = Locale.US
                         greeting?.speak("I'm ready!", TextToSpeech.QUEUE_FLUSH, null, "english-ai-calibrated")
