@@ -2,6 +2,7 @@ package com.englishai.app
 
 import android.Manifest
 import android.content.Intent
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.webkit.WebChromeClient
@@ -14,14 +15,71 @@ import androidx.core.content.ContextCompat
 import androidx.webkit.WebViewAssetLoader
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        @Volatile private var activeInstance: MainActivity? = null
+
+        /** Bring the WebView to the foreground before dispatching activation.
+         * Calling JavaScript directly on a background Activity can leave the assistant
+         * listening in the background without a reliable audible response. */
+        fun notifyHotwordActivation(context: Context) {
+            val launch = Intent(context, MainActivity::class.java).apply {
+                action = HotwordListeningService.ACTION_HOTWORD_DETECTED
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            try {
+                context.startActivity(launch)
+            } catch (e: Exception) {
+                android.util.Log.e("EnglishAI-VoiceTraining", "Could not bring assistant WebView to activation flow", e)
+                // If Android blocks foregrounding but the WebView is already alive, make
+                // one best-effort dispatch so activation is not silently lost.
+                val current = activeInstance
+                if (current != null && current.pageReady && current::web.isInitialized) {
+                    current.runOnUiThread {
+                        current.web.evaluateJavascript("window.Native && window.Native.onHotwordActivated && window.Native.onHotwordActivated()", null)
+                    }
+                }
+            }
+        }
+    }
     private lateinit var web: WebView
     private lateinit var bridge: NativeBridge
     private var pageReady = false
     private var pendingHotwordActivation = false
     private var pauseHotwordForActivation = false
+    private var pendingOverlayText = ""
+    private var pendingAnkiTsv = ""
+    private var pendingVoiceTrainingPermission = false
     private val pickModel = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) bridge.importModel(uri) }
+    private val createAnkiExport = registerForActivityResult(ActivityResultContracts.CreateDocument("text/tab-separated-values")) { uri ->
+        if (uri == null) {
+            bridge.onAnkiExportResult(false, "Exportação cancelada.")
+        } else {
+            try {
+                val output = contentResolver.openOutputStream(uri) ?: error("Não foi possível abrir o arquivo escolhido.")
+                output.use { it.write(pendingAnkiTsv.toByteArray(Charsets.UTF_8)) }
+                bridge.onAnkiExportResult(true, "TSV salvo. Importe no Anki usando tabulação como separador e a terceira coluna como Tags.")
+            } catch (e: Exception) {
+                bridge.onAnkiExportResult(false, e.message ?: "Não foi possível salvar o TSV.")
+            } finally {
+                pendingAnkiTsv = ""
+            }
+        }
+    }
     private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) bridge.startListeningGranted() else bridge.speechError("Microphone permission is required for voice practice.")
+    }
+    private val hotwordPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+        val micGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val notificationsGranted = android.os.Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        if (micGranted && notificationsGranted) {
+            if (pendingVoiceTrainingPermission) { pendingVoiceTrainingPermission = false; bridge.startVoiceCalibrationGranted() }
+            else bridge.setHotwordEnabled(true)
+        } else {
+            val wasVoiceTraining = pendingVoiceTrainingPermission
+            pendingVoiceTrainingPermission = false
+            if (wasVoiceTraining) bridge.voiceTrainingPermissionDenied() else bridge.hotwordPermissionDenied()
+        }
     }
     private val firstLaunchPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
         if (results[Manifest.permission.RECORD_AUDIO] == true) {
@@ -31,6 +89,24 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    private fun requestVoiceTrainingRuntimePermissions() {
+        pendingVoiceTrainingPermission = true
+        requestHotwordRuntimePermissions()
+    }
+
+    private fun requestHotwordRuntimePermissions() {
+        val needed = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
+            needed.add(Manifest.permission.RECORD_AUDIO)
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            needed.add(Manifest.permission.POST_NOTIFICATIONS)
+        if (needed.isEmpty()) {
+            if (pendingVoiceTrainingPermission) { pendingVoiceTrainingPermission = false; bridge.startVoiceCalibrationGranted() }
+            else bridge.setHotwordEnabled(true)
+        } else hotwordPermissions.launch(needed.toTypedArray())
+    }
+
     private fun requestFirstLaunchPermissions() {
         val prefs = getSharedPreferences("english_ai_user_settings", MODE_PRIVATE)
         if (prefs.getBoolean("firstLaunchPermissionsAsked", false)) return
@@ -45,8 +121,12 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        activeInstance = this
         pendingHotwordActivation = intent?.action == HotwordListeningService.ACTION_HOTWORD_DETECTED
         pauseHotwordForActivation = pendingHotwordActivation
+        if (intent?.action == AssistantOverlayService.ACTION_OVERLAY_TEXT) {
+            pendingOverlayText = intent.getStringExtra(AssistantOverlayService.EXTRA_OVERLAY_TEXT).orEmpty()
+        }
         val prevHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             try { java.io.File(filesDir, "last_crash.txt").writeText(java.util.Date().toString() + "\n" + e.stackTraceToString().take(4000)) } catch (_: Throwable) {}
@@ -72,10 +152,22 @@ class MainActivity : ComponentActivity() {
                 bridge.refreshVoices()
                 pageReady = true
                 requestFirstLaunchPermissions()
+                // Do not restart the hotword listener during the activation hand-off: the
+                // JavaScript callback is about to start the foreground speech recognizer.
+                val launchedByHotword = pendingHotwordActivation || pauseHotwordForActivation
                 dispatchPendingHotwordActivation()
+                if (pendingOverlayText.isNotBlank()) {
+                    val text = pendingOverlayText
+                    pendingOverlayText = ""
+                    web.postDelayed({ web.evaluateJavascript("window.Native && window.Native.onOverlayText && window.Native.onOverlayText(" + org.json.JSONObject.quote(text) + ")", null) }, 350)
+                }
+                if (!launchedByHotword) bridge.restoreHotwordIfEnabled()
             }
         }
-        bridge = NativeBridge(this, web, { pickModel.launch(arrayOf("*/*")) }, { requestMic() })
+        bridge = NativeBridge(this, web, { pickModel.launch(arrayOf("*/*")) }, { requestMic() }, { tsv, filename ->
+            pendingAnkiTsv = tsv
+            createAnkiExport.launch(filename)
+        }, { requestHotwordRuntimePermissions() }, { requestVoiceTrainingRuntimePermissions() })
         web.addJavascriptInterface(bridge, "NativeBridge")
         setContentView(web)
         web.loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
@@ -83,7 +175,13 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.action == HotwordListeningService.ACTION_HOTWORD_DETECTED) {
+        if (intent.action == HotwordListeningService.ACTION_CALIBRATION_SUCCESS) {
+            if (::web.isInitialized) web.postDelayed({ web.evaluateJavascript("window.Native && window.Native.onVoiceCalibrationSuccess && window.Native.onVoiceCalibrationSuccess()", null) }, 250)
+        } else if (intent.action == AssistantOverlayService.ACTION_OVERLAY_TEXT) {
+            val text = intent.getStringExtra(AssistantOverlayService.EXTRA_OVERLAY_TEXT).orEmpty()
+            if (::web.isInitialized && pageReady) web.postDelayed({ web.evaluateJavascript("window.Native && window.Native.onOverlayText && window.Native.onOverlayText(" + org.json.JSONObject.quote(text) + ")", null) }, 350)
+            else pendingOverlayText = text
+        } else if (intent.action == HotwordListeningService.ACTION_HOTWORD_DETECTED) {
             pendingHotwordActivation = true
             // Also pause immediately when this Activity is already in the foreground;
             // onNewIntent does not guarantee another onResume callback.
@@ -128,5 +226,5 @@ class MainActivity : ComponentActivity() {
     override fun onStart() { super.onStart(); idle.removeCallbacks(unloadTask); if (::bridge.isInitialized) bridge.setForeground(true) }
     override fun onTrimMemory(level: Int) { super.onTrimMemory(level); if (level >= 15 && ::bridge.isInitialized) bridge.trimMemory() }
     override fun onBackPressed() { web.evaluateJavascript("window.Native && window.Native.onBack ? window.Native.onBack() : false") { handled -> if (handled != "true") finish() } }
-    override fun onDestroy() { if (::bridge.isInitialized) bridge.close(); if (::web.isInitialized) web.destroy(); super.onDestroy() }
+    override fun onDestroy() { if (activeInstance === this) activeInstance = null; if (::bridge.isInitialized) bridge.close(); if (::web.isInitialized) web.destroy(); super.onDestroy() }
 }

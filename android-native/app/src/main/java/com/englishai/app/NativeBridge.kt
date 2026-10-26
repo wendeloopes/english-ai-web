@@ -22,10 +22,13 @@ import com.google.mlkit.nl.translate.TranslatorOptions
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.Executors
 
-class NativeBridge(private val activity: Activity, private val web: WebView, private val choose: () -> Unit, private val requestMic: () -> Unit) {
+class NativeBridge(private val activity: Activity, private val web: WebView, private val choose: () -> Unit, private val requestMic: () -> Unit, private val exportTsv: (String, String) -> Unit, private val requestHotwordPermissions: () -> Unit, private val requestVoiceTrainingPermissions: () -> Unit) {
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private val engine = LiteRtEngine(activity)
@@ -37,8 +40,8 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         { ok, message -> call("onOfflineSpeechModelStatus", ok.toString(), JSONObject.quote(message)) },
         { call("onSpeechReady") },
         { call("onSpeechStarted") },
-        { text -> call("onSpeechPartial", JSONObject.quote(text)) },
-        { text -> call("onSpeechEnd", JSONObject.quote(text)) },
+        { text -> call("onSpeechPartial", JSONObject.quote(text)); broadcastOverlayUserCaption(text, false) },
+        { text -> call("onSpeechEnd", JSONObject.quote(text)); broadcastOverlayUserCaption(text, true) },
         { message -> call("onSpeechError", JSONObject.quote(message)) }
     )
     @Volatile private var ptTranslator: Translator? = null
@@ -48,6 +51,8 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     @Volatile private var listeningStartupPending = false
     // Retry one transient service disconnect without switching away from the offline provider.
     @Volatile private var speechDisconnectRetries = 0
+    @Volatile private var ttsReady = false
+    private var pendingSpeech: Array<String>? = null
     @Volatile private var modelLoadFailure: String? = null
     private val modelFile get() = File(activity.filesDir, "model.litertlm")
     private val backupModelFile get() = File(activity.filesDir, "model.bak")
@@ -63,18 +68,52 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         }
     }
     init {
-        tts = TextToSpeech(activity) { status -> if (status == TextToSpeech.SUCCESS) {
-            tts?.language = Locale.US
-            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(id: String?) {}
-                override fun onDone(id: String?) { id?.let { call("onTtsDone", JSONObject.quote(it)) } }
-                override fun onError(id: String?) { id?.let { call("onTtsDone", JSONObject.quote(it)) } }
-                override fun onRangeStart(id: String?, start: Int, end: Int, frame: Int) { id?.let { call("onTtsRange", JSONObject.quote(it), start.toString()) } }
-            })
-            refreshVoices()
-        } }
+        tts = TextToSpeech(activity) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                tts?.language = Locale.US
+                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(id: String?) {}
+                    override fun onDone(id: String?) { id?.let { call("onTtsDone", JSONObject.quote(it)) } }
+                    override fun onError(id: String?) { id?.let { call("onTtsDone", JSONObject.quote(it)) } }
+                    override fun onRangeStart(id: String?, start: Int, end: Int, frame: Int) { id?.let { call("onTtsRange", JSONObject.quote(it), start.toString()) } }
+                })
+                ttsReady = true
+                refreshVoices()
+                // A hotword can arrive before Android finishes initializing TextToSpeech.
+                // Replay that first acknowledgement instead of silently dropping it.
+                val pending = pendingSpeech
+                pendingSpeech = null
+                if (pending != null && pending.size >= 4) speak(pending[0], pending[1], pending[2], pending[3])
+            } else {
+                ttsReady = false
+                val pending = pendingSpeech
+                pendingSpeech = null
+                if (pending != null && pending.isNotEmpty()) call("onTtsDone", JSONObject.quote(pending[0]))
+                android.util.Log.e("EnglishAI-TTS", "TextToSpeech initialization failed: status=$status")
+            }
+        }
     }
     @JavascriptInterface fun exitApp() { main.post { activity.finish() } }
+    private fun broadcastOverlayUserCaption(text: String, isFinal: Boolean) {
+        val clean = text.trim().take(400)
+        if (clean.isEmpty()) return
+        val intent = Intent(AssistantOverlayService.ACTION_TRANSCRIPT).setPackage(activity.packageName)
+            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT, clean)
+            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_SOURCE, AssistantOverlayService.SOURCE_USER)
+            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_FINAL, isFinal)
+        try { activity.sendBroadcast(intent) } catch (_: Exception) {}
+    }
+    /** Forward the English sentence currently spoken by the in-app tutor to the visual overlay. */
+    @JavascriptInterface fun setOverlayCaption(text: String, charIndex: Int) {
+        val clean = text.trim().take(400)
+        if (clean.isEmpty()) return
+        val intent = Intent(AssistantOverlayService.ACTION_TRANSCRIPT).setPackage(activity.packageName)
+            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT, clean)
+            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_SOURCE, AssistantOverlayService.SOURCE_TUTOR)
+            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_INDEX, charIndex.coerceIn(-1, clean.length))
+            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_FINAL, charIndex < 0)
+        try { activity.sendBroadcast(intent) } catch (_: Exception) {}
+    }
     private fun call(name: String, vararg args: String) { val code = "window.Native && window.Native." + name + " && window.Native." + name + "(" + args.joinToString(",") + ")"; main.post { web.evaluateJavascript(code, null) } }
     private fun status(ok: Boolean, label: String, msg: String) = call("onModelStatus", ok.toString(), JSONObject.quote(label), JSONObject.quote(msg))
     @JavascriptInterface fun loadModel() {
@@ -216,7 +255,34 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     @JavascriptInterface fun isHotwordEnabled(): Boolean =
         activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE).getBoolean("hotwordEnabled", false)
 
-    /** Start hotword only from the visible app after the user explicitly enables it. */
+    /** Restore a previously opted-in listener when the user opens the app, never directly from BOOT_COMPLETED. */
+    fun restoreHotwordIfEnabled() {
+        val prefs = activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("hotwordEnabled", false)) return
+        val micGranted = activity.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val notificationsGranted = Build.VERSION.SDK_INT < 33 ||
+            activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!micGranted || !notificationsGranted) {
+            prefs.edit().putBoolean("hotwordEnabled", false).apply()
+            call("onHotwordStatus", "false", JSONObject.quote("Voice activation was paused because microphone or notification permission is missing. Re-enable it in settings."))
+            return
+        }
+        if (!offlineSpeech.isInstalled()) {
+            prefs.edit().putBoolean("hotwordEnabled", false).apply()
+            call("onHotwordStatus", "false", JSONObject.quote("Voice activation was paused because the Vosk model is missing. Download the offline speech engine and enable the trigger again."))
+            return
+        }
+        try {
+            val intent = Intent(activity, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_START)
+            if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(intent) else activity.startService(intent)
+            call("onHotwordStatus", "true", JSONObject.quote("Vosk offline voice activation restored while the app is open."))
+        } catch (e: Exception) {
+            prefs.edit().putBoolean("hotwordEnabled", false).apply()
+            call("onHotwordStatus", "false", JSONObject.quote(e.message ?: "Could not restore the Vosk voice activation service."))
+        }
+    }
+
+    /** Start the Vosk-only hotword service only after runtime permissions and its model are ready. */
     @JavascriptInterface fun setHotwordEnabled(enabled: Boolean) {
         val prefs = activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
         if (!enabled) {
@@ -225,29 +291,77 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
             call("onHotwordStatus", "false", JSONObject.quote("Voice activation stopped."))
             return
         }
-        if (activity.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            call("onHotwordStatus", "false", JSONObject.quote("Microphone permission is required. Grant it in Android app settings, then enable voice activation again."))
+        if (activity.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            (Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)) {
+            call("onHotwordStatus", "false", JSONObject.quote("Android will ask for microphone and notification permissions before enabling the offline trigger."))
+            main.post { requestHotwordPermissions() }
             return
         }
-        if (Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            call("onHotwordStatus", "false", JSONObject.quote("Notifications must be enabled so Android can show the persistent microphone indicator. Allow notifications, then enable voice activation again."))
-            main.post {
-                try {
-                    val settingsIntent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                    settingsIntent.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, activity.packageName)
-                    activity.startActivity(settingsIntent)
-                } catch (_: Exception) {}
-            }
+        if (!offlineSpeech.isInstalled()) {
+            prefs.edit().putBoolean("hotwordEnabled", false).apply()
+            call("onHotwordStatus", "false", JSONObject.quote("The “Hi, English AI” trigger requires the Vosk offline English model. Tap “Download offline speech engine” first (one-time download, about 40 MB), then enable the trigger."))
             return
         }
         try {
             prefs.edit().putBoolean("hotwordEnabled", true).apply()
             val intent = Intent(activity, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_START)
             if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(intent) else activity.startService(intent)
-            call("onHotwordStatus", "true", JSONObject.quote("Voice activation is on. A persistent notification will remain visible while the microphone is active."))
+            call("onHotwordStatus", "true", JSONObject.quote("Vosk offline trigger enabled. Keep the persistent notification visible; microphone audio stays on this device."))
         } catch (e: Exception) {
             prefs.edit().putBoolean("hotwordEnabled", false).apply()
-            call("onHotwordStatus", "false", JSONObject.quote(e.message ?: "Could not start voice activation. Keep English AI open and try again."))
+            call("onHotwordStatus", "false", JSONObject.quote(e.message ?: "Could not start the Vosk hotword service. Keep English AI open and try again."))
+        }
+    }
+
+    fun voiceTrainingPermissionDenied() {
+        call("onVoiceCalibrationStatus", "false", JSONObject.quote("Permissão de microfone/notificações negada. Autorize nas configurações do Android e tente novamente."))
+    }
+
+    fun hotwordPermissionDenied() {
+        activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
+            .edit().putBoolean("hotwordEnabled", false).apply()
+        call("onHotwordStatus", "false", JSONObject.quote("Voice activation was not enabled because the required microphone/notification permission was denied."))
+    }
+
+    /** JS entry point for the Train Voice button. */
+    @JavascriptInterface fun startVoiceTraining() = startVoiceCalibration()
+
+    /** Starts on-device trigger calibration; the permission callback resumes this flow automatically. */
+    @JavascriptInterface fun startVoiceCalibration() {
+        if (activity.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            (Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)) {
+            call("onVoiceCalibrationStatus", "false", JSONObject.quote("Solicitando permissões de microfone/notificações…"))
+            main.post { requestVoiceTrainingPermissions() }
+            return
+        }
+        startVoiceCalibrationGranted()
+    }
+
+    fun startVoiceCalibrationGranted() {
+        android.util.Log.d("EnglishAI-VoiceTraining", "Permission granted; checking Vosk model and overlay permission")
+        if (!offlineSpeech.isInstalled()) {
+            android.util.Log.e("EnglishAI-VoiceTraining", "Vosk model missing in internal storage and no bundled asset could be installed")
+            call("onVoiceCalibrationStatus", "false", JSONObject.quote("Modelo Vosk ausente. Baixe o mecanismo offline primeiro; se o modelo estiver empacotado nos assets, ele será instalado automaticamente."))
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 23 && !android.provider.Settings.canDrawOverlays(activity)) {
+            call("onVoiceCalibrationStatus", "false", JSONObject.quote("Enable Display over other apps for English AI, return here, and tap Train again."))
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + activity.packageName))
+                activity.startActivity(intent)
+            } catch (_: Exception) {}
+            return
+        }
+        try {
+            val prefs = activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("hotwordEnabled", true).apply()
+            android.util.Log.d("EnglishAI-VoiceTraining", "Starting HotwordListeningService ACTION_CALIBRATE")
+            val intent = Intent(activity, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_CALIBRATE)
+            if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(intent) else activity.startService(intent)
+            call("onVoiceCalibrationStatus", "false", JSONObject.quote("Listening for “Hi English AI”… say the phrase clearly."))
+        } catch (e: Exception) {
+            android.util.Log.e("EnglishAI-VoiceTraining", "Could not start calibration service", e)
+            call("onVoiceCalibrationStatus", "false", JSONObject.quote(e.message ?: "Could not start calibration."))
         }
     }
 
@@ -289,6 +403,31 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     } }
     fun reloadIfUnloaded() = setForeground(true)
     fun trimMemory() { worker.execute { engine.trimConversation() } }
+    /** Private on-device persistence for vocabulary and spaced-repetition progress. */
+    @JavascriptInterface fun getVocabularyData(): String {
+        return activity.getSharedPreferences("english_ai_vocabulary", Activity.MODE_PRIVATE)
+            .getString("cards", "[]") ?: "[]"
+    }
+    @JavascriptInterface fun saveVocabularyData(json: String) {
+        if (json.length > 1_500_000) return
+        try {
+            JSONArray(json)
+            activity.getSharedPreferences("english_ai_vocabulary", Activity.MODE_PRIVATE)
+                .edit().putString("cards", json).apply()
+        } catch (_: Exception) { /* Never overwrite a previously valid saved deck with malformed data. */ }
+    }
+    @JavascriptInterface fun exportAnkiTsv(tsv: String, filename: String) {
+        if (tsv.length > 5_000_000 || !filename.matches(Regex("english-ai-anki-[0-9-]+\\.tsv"))) {
+            call("onAnkiExportStatus", "false", JSONObject.quote("O arquivo TSV é inválido ou excede o limite permitido."))
+            return
+        }
+        main.post { try { exportTsv(tsv, filename) } catch (e: Exception) {
+            call("onAnkiExportStatus", "false", JSONObject.quote(e.message ?: "Não foi possível abrir o salvamento do TSV."))
+        } }
+    }
+    fun onAnkiExportResult(success: Boolean, message: String) {
+        call("onAnkiExportStatus", success.toString(), JSONObject.quote(message))
+    }
     @JavascriptInterface fun copyText(text: String) { main.post { try { val cm = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager; cm.setPrimaryClip(android.content.ClipData.newPlainText("English Ai", text)) } catch (_: Exception) {} } }
     @JavascriptInterface fun openUrl(url: String) { main.post { try { if (url.startsWith("https://")) activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {} } }
     /** Text of the last crash / system kill (low memory, native crash...), or "". Read once at startup by the error log. */
@@ -361,6 +500,130 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
             }
         }
     } }
+    /** Download only pinned, publicly accessible LiteRT-LM bundles. SHA-256 is checked before the existing safe model swap. */
+    @JavascriptInterface fun downloadModel(modelId: String) { worker.execute {
+        data class CatalogModel(val name: String, val url: String, val sha256: String, val minBytes: Long)
+        val catalog = mapOf(
+            "gemma4-e2b" to CatalogModel(
+                "Gemma 4 E2B",
+                "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
+                "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
+                2_300_000_000L
+            ),
+            "gemma4-e4b" to CatalogModel(
+                "Gemma 4 E4B",
+                "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm",
+                "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0",
+                3_300_000_000L
+            )
+        )
+        val item = catalog[modelId]
+        if (item == null) {
+            status(false, "Download unavailable", "This model is not in the verified direct-download catalog. Open its official model card and check license/compatibility first.")
+            return@execute
+        }
+        val temp = File(activity.filesDir, "model.tmp")
+        val backup = File(activity.filesDir, "model.bak")
+        var connection: HttpURLConnection? = null
+        var swapped = false
+        try {
+            val free = android.os.StatFs(activity.filesDir.absolutePath).availableBytes
+            val existingBytes = if (modelFile.exists()) modelFile.length() else 0L
+            val required = item.minBytes + existingBytes + 256L * 1024 * 1024
+            require(free >= required) {
+                "Not enough storage for ${item.name}. Need approximately ${required / 1_000_000_000.0} GB free; available ${free / 1_000_000_000.0} GB."
+            }
+            temp.delete()
+            status(false, "Downloading model…", "Downloading ${item.name}. Keep the app open and connected to the internet.")
+            connection = (URL(item.url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 20_000
+                readTimeout = 30_000
+                instanceFollowRedirects = true
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", "EnglishAI-Android/1.3.4")
+            }
+            connection.connect()
+            val code = connection.responseCode
+            require(code in 200..299) { "Model server returned HTTP $code. Check your connection and try again." }
+            val total = connection.contentLengthLong
+            if (total > 0) require(total >= item.minBytes) { "The server returned a file smaller than the verified model. Download cancelled." }
+            val digest = MessageDigest.getInstance("SHA-256")
+            var received = 0L
+            var lastPct = -1
+            connection.inputStream.use { input ->
+                temp.outputStream().buffered(1024 * 1024).use { output ->
+                    val buffer = ByteArray(256 * 1024)
+                    while (true) {
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        if (n == 0) continue
+                        output.write(buffer, 0, n)
+                        digest.update(buffer, 0, n)
+                        received += n
+                        if (total > 0) {
+                            val pct = ((received * 100L) / total).toInt().coerceIn(0, 100)
+                            if (pct != lastPct) {
+                                lastPct = pct
+                                call("onModelDownloadProgress", (pct / 100.0).toString(), received.toString(), total.toString(), JSONObject.quote(item.name))
+                            }
+                        } else if (received % (8L * 1024 * 1024) < buffer.size) {
+                            call("onModelDownloadProgress", "0", received.toString(), "-1", JSONObject.quote(item.name))
+                        }
+                    }
+                }
+            }
+            require(received >= item.minBytes) { "Download incomplete: received ${received / 1_000_000} MB. Your previous model was not changed. Please retry." }
+            val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
+            require(actualHash.equals(item.sha256, ignoreCase = true)) {
+                "Integrity check failed (SHA-256 mismatch). The downloaded file was discarded and your previous model was kept."
+            }
+            call("onModelDownloadProgress", "1", received.toString(), total.toString(), JSONObject.quote(item.name))
+            // Commit only after the whole download and hash have been verified.
+            try { engine.close() } catch (_: Exception) {}
+            backup.delete()
+            val hadOld = modelFile.exists()
+            if (hadOld) check(modelFile.renameTo(backup)) { "Could not protect the existing model before installing the download." }
+            swapped = true
+            check(temp.renameTo(modelFile)) { "Could not commit the downloaded model to private app storage." }
+            modelLoadFailure = "The model is still loading. Wait for Model ready before sending a message."
+            status(false, "Loading model…", "${item.name} downloaded and verified. Initializing LiteRT-LM…")
+            val loadError = doLoad()
+            if (loadError == null) {
+                backup.delete()
+                modelLoadFailure = null
+                reportLoad(null, "${item.name} downloaded, SHA-256 verified and loaded for offline use.")
+            } else {
+                try { engine.close() } catch (_: Exception) {}
+                modelFile.delete()
+                if (hadOld && backup.renameTo(modelFile)) {
+                    val restoreError = doLoad()
+                    if (restoreError == null) reportLoad(null, "The new model could not load ($loadError). The previous working model was restored.")
+                    else reportLoad(restoreError, "")
+                } else {
+                    modelLoadFailure = loadError
+                    status(false, "Model could not load", "$loadError")
+                }
+            }
+        } catch (e: Throwable) {
+            temp.delete()
+            if (swapped && backup.exists()) {
+                try { engine.close() } catch (_: Exception) {}
+                modelFile.delete()
+                if (backup.renameTo(modelFile)) {
+                    val restoreError = doLoad()
+                    if (restoreError == null) reportLoad(null, "Download/install failed (${e.message}). Your previous model was restored.")
+                    else reportLoad(restoreError, "")
+                } else {
+                    status(false, "Download failed", "${e.message ?: "Could not download model."} The backup could not be restored automatically.")
+                }
+            } else {
+                status(false, "Download failed", e.message ?: "The connection was interrupted. Your current model was not changed; please retry.")
+            }
+        } finally {
+            connection?.disconnect()
+            if (!swapped) temp.delete()
+        }
+    } }
     @JavascriptInterface fun removeModel() { worker.execute { engine.close(); modelFile.delete(); File(activity.filesDir, "model.tmp").delete(); modelLoadFailure = "The local model was removed. Import a compatible .litertlm file in Settings before starting an AI conversation."; status(false, "Demo mode", "Model removed from this phone.") } }
     @JavascriptInterface fun generate(json: String) { cancelled = false; worker.execute { try {
         if (modelLoadFailure != null) throw IllegalStateException(modelLoadFailure)
@@ -420,46 +683,70 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
 
     @JavascriptInterface fun getVoices() { refreshVoices() }
     fun refreshVoices() { val arr = JSONArray(); tts?.voices?.filter { it.locale.language == "en" }?.forEach { v -> arr.put(JSONObject().put("name", v.name).put("lang", v.locale.toLanguageTag())) }; call("onVoices", JSONObject.quote(arr.toString())) }
-    @JavascriptInterface fun speak(id: String, text: String, rate: String, voiceName: String) { main.post { try { val clean = EnglishTtsManager.sanitizeText(text); if (clean.isBlank()) { call("onTtsDone", JSONObject.quote(id)); return@post }; tts?.language = Locale.US; tts?.setSpeechRate(rate.toFloatOrNull() ?: 1f); tts?.voices?.firstOrNull { it.name == voiceName && it.locale.language == "en" }?.let { tts?.voice = it }; tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, id) } catch (_: Exception) { call("onTtsDone", JSONObject.quote(id)) } } }
+    @JavascriptInterface fun speak(id: String, text: String, rate: String, voiceName: String) { main.post {
+        if (!ttsReady || tts == null) {
+            pendingSpeech = arrayOf(id, text, rate, voiceName)
+            android.util.Log.d("EnglishAI-TTS", "TTS not ready; queued utterance $id")
+            return@post
+        }
+        try {
+            val clean = EnglishTtsManager.sanitizeText(text)
+            if (clean.isBlank()) { call("onTtsDone", JSONObject.quote(id)); return@post }
+            tts?.language = Locale.US
+            tts?.setSpeechRate(rate.toFloatOrNull() ?: 1f)
+            tts?.voices?.firstOrNull { it.name == voiceName && it.locale.language == "en" }?.let { tts?.voice = it }
+            val result = tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, id)
+            if (result == TextToSpeech.ERROR) call("onTtsDone", JSONObject.quote(id))
+        } catch (e: Exception) {
+            android.util.Log.e("EnglishAI-TTS", "Could not speak utterance $id", e)
+            call("onTtsDone", JSONObject.quote(id))
+        }
+    } }
     @JavascriptInterface fun stopSpeaking() { main.post { tts?.stop() } }
     @JavascriptInterface fun downloadOfflineSpeechModel() { offlineSpeech.downloadModel() }
     @JavascriptInterface fun isOfflineSpeechModelInstalled(): Boolean = offlineSpeech.isInstalled()
     @JavascriptInterface fun startListening() { main.post { requestMic() } }
     fun startListeningGranted() {
         main.post {
-            // A hotword recognizer must release the microphone before push-to-talk starts.
-            if (activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
-                    .getBoolean("hotwordEnabled", false)) {
+            val hotwordEnabled = activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
+                .getBoolean("hotwordEnabled", false)
+            if (hotwordEnabled) {
+                // Let the service process ACTION_PAUSE and release AudioRecord before opening Vosk
+                // for the user's actual utterance. Opening both recorders concurrently loses the mic.
                 try { activity.startService(Intent(activity, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_PAUSE)) } catch (_: Exception) {}
-            }
-            if (listening || listeningStartupPending) return@post
-            speechDisconnectRetries = 0
-            // Prefer the separately installed Vosk engine. It does not use Android's broken
-            // Speech Recognition service and never sends audio off-device.
-            if (offlineSpeech.isInstalled()) {
-                try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) {}
-                recognizer = null
-                try { tts?.stop() } catch (_: Exception) {}
-                listeningStartupPending = false
-                offlineSpeech.start()
+                main.postDelayed({ startListeningAfterHotwordPause() }, 350)
                 return@post
             }
-            if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
-                call("onSpeechError", JSONObject.quote("No speech recognition service is available. Check Android's Speech Recognition settings."))
-                return@post
-            }
-            // Stop English speech playback before opening the microphone, then allow audio routing to settle.
-            try { tts?.stop() } catch (_: Exception) {}
-            listeningStartupPending = true
-            main.postDelayed({
-                if (listening) { listeningStartupPending = false; return@postDelayed }
-                if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)) {
-                    beginListening(useOnDevice = true)
-                } else {
-                    beginListening(useOnDevice = false)
-                }
-            }, 180)
+            startListeningAfterHotwordPause()
         }
+    }
+
+    private fun startListeningAfterHotwordPause() {
+        if (listening || listeningStartupPending) return
+        speechDisconnectRetries = 0
+        // Prefer the separately installed Vosk engine. It does not use Android's speech service.
+        if (offlineSpeech.isInstalled()) {
+            try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) {}
+            recognizer = null
+            try { tts?.stop() } catch (_: Exception) {}
+            listeningStartupPending = false
+            offlineSpeech.start()
+            return
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
+            call("onSpeechError", JSONObject.quote("No speech recognition service is available. Check Android's Speech Recognition settings."))
+            return
+        }
+        try { tts?.stop() } catch (_: Exception) {}
+        listeningStartupPending = true
+        main.postDelayed({
+            if (listening) { listeningStartupPending = false; return@postDelayed }
+            if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)) {
+                beginListening(useOnDevice = true)
+            } else {
+                beginListening(useOnDevice = false)
+            }
+        }, 180)
     }
 
     private fun beginListening(useOnDevice: Boolean) {

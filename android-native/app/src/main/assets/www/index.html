@@ -195,6 +195,10 @@ select,input[type=range],.txt{background:#132844;color:#f3f7ff;border:1px solid 
 .emptyPage{padding:28px 18px;text-align:center;border:1px dashed #29466b;border-radius:18px;color:#91a7c8;font-size:13px;line-height:1.5}
 #savedList{display:grid;gap:9px}
 .pagefootnote{font-size:11px;line-height:1.5;color:#7189aa;padding:4px 2px}
+.modelpreset{text-align:left;width:100%;cursor:pointer;min-height:74px}
+.modelpreset .featureicon{font-size:12px;font-weight:800;letter-spacing:-.5px}
+.modelpreset.selected{border-color:#58a8ff;background:linear-gradient(110deg,#153b63,#10213a);box-shadow:0 0 0 1px #58a8ff55}
+.modelpreset .pill{display:inline-block;margin-left:5px;vertical-align:middle;font-size:9px;padding:4px 6px}
 @media(max-height:650px){#bottomNav{height:58px}.mainpage{padding-top:5px}.heroPanel{padding:16px}.lesson{min-height:130px}}
 @media(min-width:600px){.app{border-left:1px solid #1b3453;border-right:1px solid #1b3453}#bottomNav{left:24px;right:24px}.mainpage{padding-left:24px;padding-right:24px}}
 
@@ -309,7 +313,24 @@ select,input[type=range],.txt{background:#132844;color:#f3f7ff;border:1px solid 
     <button class="featurecard" id="modelsChoose"><span class="featureicon"><svg class="i" viewBox="0 0 24 24"><path d="M12 16V3M7 8l5-5 5 5M4 15v5h16v-5"/></svg></span><span class="featurecopy"><b>Selecionar arquivo do modelo</b><small>Escolha um arquivo de modelo compatível no dispositivo.</small></span><span class="chev">›</span></button>
     <button class="featurecard" id="modelsRemove"><span class="featureicon"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6M14 10v6"/></svg></span><span class="featurecopy"><b>Remover modelo local</b><small>Libera espaço; será necessário selecionar o arquivo novamente.</small></span><span class="chev">›</span></button>
   </div>
-  <div class="featurelist" id="localModelPresets" style="margin-top:14px"><h2 style="font-size:18px;margin:4px 0">Modelos locais conhecidos</h2><p class="pageintro">Selecione o perfil apenas para orientar a escolha do arquivo. Isso não baixa, converte nem garante compatibilidade do modelo.</p><select class="txt" id="localModelPreset"><option value="auto">Detectar pelo arquivo (recomendado)</option><option value="llama">Llama 3.2</option><option value="gemma">Gemma 2</option><option value="phi">Phi-3 Mini</option><option value="mistral">Mistral 7B</option></select><div class="actionline"><button class="btn g" id="choosePresetModel" type="button">Escolher arquivo local</button><a href="https://github.com/google-ai-edge/LiteRT-LM" target="_blank" rel="noopener" style="color:#a7d7ff;font-size:12px">Formatos compatíveis</a></div></div>
+  <div class="featurelist" id="localModelPresets" style="margin-top:14px">
+    <h2 style="font-size:18px;margin:4px 0">Modelos de IA</h2>
+    <p class="pageintro">Arquivos LiteRT-LM verificados para download direto. Os downloads usam conexão HTTPS, barra de progresso e validação SHA-256 antes de substituir o modelo atual.</p>
+    <select class="txt" id="localModelPreset" aria-label="Perfil de modelo" style="display:none"><option value="gemma4-e2b">Gemma 4 E2B</option><option value="gemma4-e4b">Gemma 4 E4B</option><option value="llama32-1b">Llama 3.2 1B</option><option value="phi3-mini">Phi-3 Mini</option></select>
+    <div id="modelPresetList" style="display:grid;gap:9px;margin-top:12px">
+      <button type="button" class="featurecard modelpreset selected" data-model-preset="gemma4-e2b" aria-pressed="true"><span class="featureicon">AI</span><span class="featurecopy"><b>Gemma 4 E2B <span class="pill">Recomendado</span></b><small>2,59 GB · Download direto · SHA-256 verificado</small></span><span class="chev">✓</span></button>
+      <button type="button" class="featurecard modelpreset" data-model-preset="gemma4-e4b" aria-pressed="false"><span class="featureicon">AI</span><span class="featurecopy"><b>Gemma 4 E4B</b><small>3,66 GB · Download direto · Requer mais RAM</small></span><span class="chev">›</span></button>
+      <button type="button" class="featurecard modelpreset" data-model-preset="llama32-1b" aria-pressed="false"><span class="featureicon">AI</span><span class="featurecopy"><b>Llama 3.2 1B</b><small>920 MB · Exige aceitar a licença da Meta antes de baixar</small></span><span class="chev">›</span></button>
+      <button type="button" class="featurecard modelpreset" data-model-preset="phi3-mini" aria-pressed="false"><span class="featureicon">AI</span><span class="featurecopy"><b>Phi-3 Mini</b><small>3,58 GiB · Arquivo disponível; download direto ainda não verificado neste catálogo</small></span><span class="chev">›</span></button>
+    </div>
+    <div style="display:grid;gap:9px;margin-top:16px">
+      <button class="btn" id="downloadStrongerModel" type="button">Baixar modelo selecionado</button>
+      <button class="btn g" id="choosePresetModel" type="button">Carregar modelo existente</button>
+      <progress id="modelDownloadProgress" max="1" value="0" aria-label="Progresso do download" style="display:none"></progress>
+      <p class="pagefootnote" id="modelDownloadStatus" role="status" aria-live="polite">Selecione um modelo. O arquivo atual só será substituído depois que o download e a integridade forem verificados.</p>
+    </div>
+    <p class="pagefootnote">O catálogo de download direto contém apenas arquivos com origem e hash conhecidos. Llama 3.2 abre a página oficial porque requer aceitação de licença; Phi-3 Mini ainda não está habilitado para download direto aqui. Para usar Gemini, selecione o modo online abaixo e forneça sua chave de API; offline continua sendo o padrão.</p>
+  </div>
   <div class="featurelist" id="aiModePanel" style="margin-top:14px">
     <h2 style="font-size:18px;margin:4px 0">Modo de IA</h2>
     <p class="pageintro">Offline é o padrão. Online só é usado quando você selecionar explicitamente e fornecer uma chave de API.</p>
@@ -322,7 +343,7 @@ select,input[type=range],.txt{background:#132844;color:#f3f7ff;border:1px solid 
     <div class="actionline"><button class="btn g" id="aiForgetKey" type="button">Limpar chave da sessão</button><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="color:#a7d7ff;font-size:12px">Obter chave</a></div>
   </div>
   <div class="featurelist" style="margin-top:14px"><h2 style="font-size:18px;margin:4px 0">Outros assistentes online</h2><p class="pageintro">Estes atalhos abrem o serviço externo; não compartilham automaticamente o histórico do English AI.</p><div class="actionline"><button class="btn g" id="openChatGPTWeb" type="button">ChatGPT</button><button class="btn g" id="openClaudeWeb" type="button">Claude</button></div></div>
-  <p class="pagefootnote">Llama 3.2, Gemma 2, Phi-3 Mini e Mistral 7B só funcionarão se o motor nativo instalado aceitar exatamente o formato e a quantização do arquivo selecionado. Selecionar um nome não instala nem converte o modelo.</p>
+  <p class="pagefootnote">Gemma 4 E2B e E4B têm download direto com SHA-256 verificado. Llama 3.2 1B exige aceitar a licença da Meta; Phi-3 Mini ainda requer validação do arquivo antes de entrar no catálogo de download direto. Arquivos importados manualmente também precisam ser compatíveis com o LiteRT-LM.</p>
 </section>
 <nav id="bottomNav" aria-label="Navegação principal" hidden>
   <button class="navtab active" data-tab="chat" aria-label="Conversa"><svg class="i" viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.6A8 8 0 1121 12z"/></svg><span>Conversa</span></button>
@@ -402,7 +423,7 @@ select,input[type=range],.txt{background:#132844;color:#f3f7ff;border:1px solid 
 
 <script>
 const $=id=>document.getElementById(id),esc=s=>s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])),sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const ld=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch(e){return d}},sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}};
+const ld=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch(e){return d}},sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));if(k==='echo.vocabulary'&&window.NativeBridge&&typeof NativeBridge.saveVocabularyData==='function')NativeBridge.saveVocabularyData(JSON.stringify(v));return true}catch(e){return false}};
 let S=Object.assign({speak:true,caps:true,hands:false,sfx:true,pt:true,name:'',rate:1,voice:''},ld('echo.set',{}));
 let chats=ld('echo.chats',[]),curId=ld('echo.cur',null),muted=false;
 let persistWarnedAt=0;
@@ -504,8 +525,8 @@ function enqueue(s){s=speechText(s);if(!s)return;q.push(s);pump()}
 function pump(){
   if(talking||!q.length)return;const s=q.shift();talking=true;
   const u=new SpeechSynthesisUtterance(s);u.voice=pickVoice();u.lang='en-US';u.rate=S.rate;
-  setState('speaking');showCap(s,-1);
-  u.onboundary=e=>{if(e.name==='word')showCap(s,e.charIndex)};
+  setState('speaking');try{if(window.NativeBridge&&typeof NativeBridge.setOverlayCaption==='function')NativeBridge.setOverlayCaption(s,-1)}catch(e){}showCap(s,-1);
+  u.onboundary=e=>{if(e.name==='word'){showCap(s,e.charIndex);try{if(window.NativeBridge&&typeof NativeBridge.setOverlayCaption==='function')NativeBridge.setOverlayCaption(s,e.charIndex)}catch(err){}}};
   u.onend=u.onerror=()=>{talking=false;if(q.length)pump();else if(!busy)idleAfter()};
   speechSynthesis.speak(u);
 }
@@ -636,7 +657,7 @@ $('cStop').onclick=stopAll;
 
 /* ================= NAV / PANELS ================= */
 function go(id){document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('on',s.id===id));sv('echo.screen',id)}
-const panel=(id,on)=>{$(id).classList.toggle('on',on);$('veil').classList.toggle('on',on);if(on&&id==='drawer')list()};
+const panel=(id,on)=>{$(id).classList.toggle('on',on);$('veil').classList.toggle('on',on);if(on&&id==='drawer')list();if(on&&id==='sheet'&&typeof window.refreshVoiceTrainingModelStatus==='function')window.refreshVoiceTrainingModelStatus()};
 const closeAll=()=>{$('drawer').classList.remove('on');$('sheet').classList.remove('on');$('plug').classList.remove('on');$('errs').classList.remove('on');$('veil').classList.remove('on')};
 $('veil').onclick=closeAll;$('closeSheet').onclick=closeAll;
 ['vMenu','cMenu'].forEach(i=>$(i).onclick=()=>panel('drawer',true));
@@ -683,15 +704,30 @@ $('wipe').onclick=()=>{if(confirm('Delete all conversations?')){chats=[];curId=n
 /* Native Android adapter: keep the approved UI; replace browser-only capabilities. */
 if (window.NativeBridge) {
   try{ $('ver').textContent='English Ai '+NativeBridge.getInfo(); }catch(e){}
-  let nativeTokenHandler=null, nativeDone=null, nativeSpeakingId='', nativeListening=false, nativeMicLevel=0;
+  let nativeTokenHandler=null, nativeDone=null, nativeSpeakingId='', nativeListening=false, nativeMicLevel=0, listenAfterActivationGreeting=false;
   window.Native = window.Native || {};
-  window.Native.onModelStatus = (ok,label,msg) => { setStatus(label || (ok?'Gemma ready · offline':'Demo mode'),!!ok); $('prog').style.display='none'; if(msg) $('mstat').textContent=msg; };
+  window.Native.onModelStatus = (ok,label,msg) => {
+    const text=label || (ok?'Model ready · offline':'Demo mode');
+    setStatus(text,!!ok); $('prog').style.display='none'; if(msg) $('mstat').textContent=msg;
+    if($('modelDownloadStatus')) $('modelDownloadStatus').textContent=(msg||text);
+    if($('modelDownloadProgress') && !/Downloading model/i.test(text)) $('modelDownloadProgress').style.display='none';
+  };
+  window.Native.onAnkiExportStatus = (ok,message) => { if(message)toast(message); };
   window.Native.onModelProgress = p => { $('prog').style.display='block'; $('prog').value=Math.max(0,Math.min(1,Number(p)||0)); };
+  window.Native.onModelDownloadProgress = (p,received,total,name) => {
+    const bar=$('modelDownloadProgress'),label=$('modelDownloadStatus');
+    if(bar){bar.style.display='block';bar.value=Math.max(0,Math.min(1,Number(p)||0));}
+    if(label){
+      const got=Math.max(0,Number(received)||0),all=Number(total)||0;
+      const fmt=n=>n>=1e9?(n/1e9).toFixed(2)+' GB':(n/1e6).toFixed(0)+' MB';
+      label.textContent=all>0?'Baixando '+(name||'modelo')+': '+Math.round(Math.max(0,Math.min(1,Number(p)||0))*100)+'% ('+fmt(got)+' / '+fmt(all)+')':'Baixando '+(name||'modelo')+': '+fmt(got)+' recebidos…';
+    }
+  };
   window.Native.onToken = piece => { if(nativeTokenHandler) nativeTokenHandler(piece); };
   window.Native.onGenDone = () => { const done=nativeDone; nativeDone=null; nativeTokenHandler=null; if(done)done(); };
   window.Native.onGenError = msg => { const done=nativeDone; nativeDone=null; nativeTokenHandler=null; cap(esc(msg||'Generation failed')); setState('idle'); if(done)done(msg||'Generation failed'); };
-  window.Native.onTtsRange = (id,idx) => { if(id===nativeSpeakingId){ showCap(nativeSpeakingText,idx); orbPulse=Math.max(orbPulse,.55); lastRange=performance.now(); wordEnv=Math.max(wordEnv,.72); } };
-  window.Native.onTtsDone = id => { if(id!==nativeSpeakingId)return; talking=false; if(q.length)pump(); else if(!busy)idleAfter(); };
+  window.Native.onTtsRange = (id,idx) => { if(id===nativeSpeakingId){ showCap(nativeSpeakingText,idx); try{if(NativeBridge&&typeof NativeBridge.setOverlayCaption==='function')NativeBridge.setOverlayCaption(nativeSpeakingText,idx)}catch(e){} orbPulse=Math.max(orbPulse,.55); lastRange=performance.now(); wordEnv=Math.max(wordEnv,.72); } };
+  window.Native.onTtsDone = id => { if(id!==nativeSpeakingId)return; talking=false; if(q.length)pump(); else if(listenAfterActivationGreeting){listenAfterActivationGreeting=false;setTimeout(()=>listen(),250);} else if(!busy)idleAfter(); };
   window.Native.onTranslation = (id,translated) => {
     const pt=(translated||'').trim(); if(!pt)return;
     const livePrefix='live:'+nativeTranslationId+':';
@@ -732,20 +768,41 @@ if (window.NativeBridge) {
     const history=msgs.slice(-12).map(m=>({role:m.r==='me'?'user':'model',content:m.t}));
     NativeBridge.generate(JSON.stringify({system:sysPrompt(),chat:curId,count:msgs.length,messages:history}));
   });
-  pump = function(){ if(talking||!q.length)return; const s=q.shift(); talking=true; nativeSpeakingText=s; nativeSpeakingId=String(Date.now())+String(Math.random()); setState('speaking'); showCap(s,-1); NativeBridge.speak(nativeSpeakingId,s,String(S.rate),String(S.voice||'')); };
+  pump = function(){ if(talking||!q.length)return; const s=q.shift(); talking=true; nativeSpeakingText=s; nativeSpeakingId=String(Date.now())+String(Math.random()); setState('speaking'); showCap(s,-1); try{if(NativeBridge&&typeof NativeBridge.setOverlayCaption==='function')NativeBridge.setOverlayCaption(s,-1)}catch(e){} NativeBridge.speak(nativeSpeakingId,s,String(S.rate),String(S.voice||'')); };
   stopAll = function(){ nativeTranslationId=''; nativeTranslationBubble=null; gen++; q=[]; talking=false; busy=false; NativeBridge.cancelGenerate(); NativeBridge.stopSpeaking(); if(nativeListening)NativeBridge.cancelListening(); nativeListening=false; rec=null; persist(); setState('idle'); };
   listen = async function(){ if(state==='listening')return; stopAll(); heard=''; nativeListening=true; setState('listening'); cap('<span class="you">Say something in English…</span>'); NativeBridge.startListening(); };
+  window.Native.onVoiceCalibrationStatus = (ok,message) => { const el=$('voiceCalibrationStatus'); if(el&&message)el.textContent=message; if(el)el.style.color=ok?'#8dffbd':'#d9ccff'; };
+  window.Native.onVoiceCalibrationSuccess = () => {
+    const el=$('voiceCalibrationStatus');
+    if(el){el.textContent='Voz calibrada com sucesso! Frase “Hi English AI” reconhecida.';el.style.color='#8dffbd';}
+    toast("Voz reconhecida! I'm ready!");
+    // The native calibration service plays the confirmation tone and speaks “I'm ready!” once.
+
+  };
+  window.Native.onOverlayText = text => { try{go('chat');$('inp').value=String(text||'');$('inp').focus();setTimeout(()=>{const btn=$('send');if(btn)btn.click()},250);}catch(e){} };
+  // Event delegation is required because #trainVoiceButton is injected dynamically
+  // by installVoiceAssistantControls() after this script section has already run.
+  document.addEventListener('click',(event)=>{
+    const button=event.target instanceof Element ? event.target.closest('#trainVoiceButton') : null;
+    if(!button) return;
+    event.preventDefault();
+    const el=$('voiceCalibrationStatus');
+    if(el){el.textContent='Iniciando treino de voz…';el.style.color='';}
+    console.debug('[VoiceTraining] Train button clicked; NativeBridge available:',!!NB);
+    if(NB&&typeof NativeBridge.startVoiceTraining==='function') NativeBridge.startVoiceTraining();
+    else if(NB&&typeof NativeBridge.startVoiceCalibration==='function') NativeBridge.startVoiceCalibration();
+    else {if(el)el.textContent='Falha: a ponte nativa de treino de voz não está disponível nesta versão.';console.error('[VoiceTraining] Missing NativeBridge.startVoiceTraining/startVoiceCalibration');}
+  });
   window.Native.onHotwordActivated = () => {
-    if(state==='listening') return;
-    // Quiet, short confirmation tone plus visual listening ripple while the app is visible.
-    try {
-      const Ctx=window.AudioContext||window.webkitAudioContext;
-      if(Ctx){const ctx=new Ctx(),osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sine';osc.frequency.value=660;gain.gain.setValueAtTime(0.0001,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(0.055,ctx.currentTime+0.015);gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.16);osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+0.17);osc.onended=()=>ctx.close();}
-    } catch(e) {}
+    // Reset any stale WebView listening/generation state first. Otherwise a previous
+    // listening state can cause the activation callback to return without speaking.
+    stopAll();
     $('voice').classList.add('voice-activated');
-    if(state==='thinking'||state==='speaking') stopAll();
     go('voice');
-    setTimeout(()=>{ if(state==='idle') listen(); }, 500);
+    // Always acknowledge a valid voice activation aloud, then open the mic for the request.
+    listenAfterActivationGreeting=true;
+    q.unshift("I'm here. What would you like to practice?");
+    pump();
   };
   sendVoice = function(){ if(nativeListening)NativeBridge.stopListening(); };
   const choose=$('file').parentElement.querySelector('label[for="file"]'); if(choose)choose.onclick=e=>{e.preventDefault();NativeBridge.pickModel();};
@@ -835,20 +892,36 @@ $('saveRoutine').onclick=saveRoutineSettings;
     '<div style="height:1px;background:var(--line,#333)"></div>'+
     '<label style="display:flex;align-items:center;gap:10px"><input id="hotwordToggle" type="checkbox" style="width:20px;height:20px"> <span><b>“Hi, English AI!” activation</b><br><small>Uses the microphone while a permanent Android notification is visible.</small></span></label>'+
     '<div id="hotwordStatus" style="font-size:12px;opacity:.8">Voice activation is off.</div>'+
-    '<small style="opacity:.72">Hotword detection depends on Android speech recognition and battery settings. It is not covert listening; turn it off here or from the notification.</small>';
+    '<button class="btn g" id="trainVoiceButton" type="button" style="width:100%;margin-top:10px">Treinar Reconhecimento de Voz</button>'+
+    '<div id="voiceCalibrationStatus" role="status" aria-live="polite" style="font-size:12px;opacity:.9;margin-top:8px">Teste “Hi English AI” e calibre a ativação por voz.</div>'+
+    '<small style="opacity:.72">The “Hi, English AI” trigger uses the Vosk model on this device only. Download the offline speech engine first, allow microphone and notification permissions, then enable the trigger. Android may restrict microphone startup at boot; re-enable it from the app if the service was stopped. Turn it off here or from the persistent notification.</small>';
   $('saveRoutine').insertAdjacentElement('afterend',box);
   const alarm=$('morningAlarmToggle'),hotword=$('hotwordToggle');
   const offlineBtn=$('offlineSpeechDownload'),offlineStatus=$('offlineSpeechStatus');
-  if(NB){
-    try{alarm.checked=!!NativeBridge.isMorningAlarmEnabled()}catch(e){}
-    try{hotword.checked=!!NativeBridge.isHotwordEnabled()}catch(e){}
+  window.refreshVoiceTrainingModelStatus=()=>{
+    if(!NB){offlineStatus.textContent='This feature requires the native Android app.';offlineBtn.disabled=true;return;}
+    offlineStatus.textContent='Checking Vosk model in app storage/assets…';
     try{
+      // Native isOfflineSpeechModelInstalled() validates internal files and installs a bundled
+      // assets model into filesDir automatically if one is present.
       if(NativeBridge.isOfflineSpeechModelInstalled()){
         offlineStatus.textContent='Offline English speech engine is installed and ready.';
         offlineBtn.textContent='Downloaded ✓';offlineBtn.disabled=true;
-      }else offlineStatus.textContent='Not installed. Download once while connected to the internet.';
-    }catch(e){offlineStatus.textContent='Available in the native Android app.'}
-  }else{offlineStatus.textContent='This feature requires the native Android app.';offlineBtn.disabled=true}
+        const trainingStatus=$('voiceCalibrationStatus');
+        if(trainingStatus)trainingStatus.textContent='Modelo Vosk verificado no armazenamento interno. Pronto para treinar “Hi English AI”.';
+      }else{
+        offlineStatus.textContent='Not installed. Download once while connected to the internet; the hotword stays disabled until this model is ready.';
+        offlineBtn.textContent='Download offline speech engine';offlineBtn.disabled=false;
+        const trainingStatus=$('voiceCalibrationStatus');
+        if(trainingStatus)trainingStatus.textContent='Modelo Vosk não encontrado no armazenamento interno nem nos assets. Baixe o mecanismo offline para continuar.';
+      }
+    }catch(e){offlineStatus.textContent='Could not verify the offline speech model. Close Settings and retry.';console.error('[VoiceTraining] Model check failed',e);}
+  };
+  if(NB){
+    try{alarm.checked=!!NativeBridge.isMorningAlarmEnabled()}catch(e){}
+    try{hotword.checked=!!NativeBridge.isHotwordEnabled()}catch(e){}
+    window.refreshVoiceTrainingModelStatus();
+  }else window.refreshVoiceTrainingModelStatus();
   offlineBtn.addEventListener('click',()=>{
     if(!NB||typeof NativeBridge.downloadOfflineSpeechModel!=='function'){offlineStatus.textContent='This feature requires the native Android app.';return}
     offlineBtn.disabled=true;offlineStatus.textContent='Starting download…';
@@ -952,7 +1025,7 @@ function renderSaved(){
     host.appendChild(card);
   });
 }
-let vocabItems=ld('echo.vocabulary',[]);
+let vocabItems=(()=>{const local=ld('echo.vocabulary',[]);try{if(NB&&typeof NativeBridge.getVocabularyData==='function'){const raw=NativeBridge.getVocabularyData();if(raw){const parsed=JSON.parse(raw);if(Array.isArray(parsed)){if(!parsed.length&&local.length){NativeBridge.saveVocabularyData(JSON.stringify(local));return local}localStorage.setItem('echo.vocabulary',JSON.stringify(parsed));return parsed}}}}catch(e){}return local})();
 function renderVocab(){
   const host=$('vocabList');if(!host)return;host.innerHTML='';
   $('vocabCount').textContent=vocabItems.length+' '+(vocabItems.length===1?'palavra':'palavras');
@@ -980,6 +1053,22 @@ function refreshModelsPage(){
   $('modelsDescription').textContent=ok?'O modelo local está indicado como carregado.':'Selecione um arquivo local compatível ou ative o modo online de forma explícita.';
   $('moreVersion').textContent=($('ver')?.textContent||'English AI')+' · Conversas e preferências ficam no armazenamento local do app.';
 }
+function selectModelPreset(name){
+  const select=$('localModelPreset');if(select)select.value=name;
+  document.querySelectorAll('#modelPresetList [data-model-preset]').forEach(button=>{
+    const selected=button.dataset.modelPreset===name;
+    button.classList.toggle('selected',selected);button.setAttribute('aria-pressed',String(selected));
+    const mark=button.querySelector('.chev');if(mark)mark.textContent=selected?'✓':'›';
+  });
+}
+document.querySelectorAll('#modelPresetList [data-model-preset]').forEach(button=>button.addEventListener('click',()=>selectModelPreset(button.dataset.modelPreset)));
+$('downloadStrongerModel')?.addEventListener('click',()=>{
+  const model=$('localModelPreset')?.value||'gemma4-e2b';
+  if(model==='llama32-1b'){openUrl('https://huggingface.co/litert-community/Llama-3.2-1B');if($('modelDownloadStatus'))$('modelDownloadStatus').textContent='Aceite a licença da Meta e confirme o acesso na página oficial. Depois, baixe o arquivo .litertlm e use “Carregar modelo existente”.';return;}
+  if(model==='phi3-mini'){openUrl('https://huggingface.co/litert-community/Phi-3-mini-4k-instruct');if($('modelDownloadStatus'))$('modelDownloadStatus').textContent='Este arquivo não está habilitado para download direto verificado nesta versão. Consulte a página oficial e carregue um arquivo .litertlm compatível.';return;}
+  try{if(NB&&typeof NativeBridge.downloadModel==='function'){NativeBridge.downloadModel(model);return;}}catch(e){}
+  if($('modelDownloadStatus'))$('modelDownloadStatus').textContent='O download direto só funciona na versão Android do English AI.';
+});
 $('choosePresetModel')?.addEventListener('click',()=>{try{if(NB&&typeof NativeBridge.pickModel==='function'){NativeBridge.pickModel();return}}catch(e){}$('file').click()});
 $('openChatGPTWeb')?.addEventListener('click',()=>openUrl('https://chatgpt.com/'));
 $('openClaudeWeb')?.addEventListener('click',()=>openUrl('https://claude.ai/new'));
@@ -1040,7 +1129,58 @@ syncBottomNav(document.querySelector('.screen.on')?.id||'welcome');
   // Local vocabulary filters, favorites, daily review progress, pronunciation and Anki TSV export.
   const vocabPage=$('vocab'),vocabForm=$('vocabForm'),vocabList=$('vocabList');
   if(vocabPage&&vocabForm&&vocabList){
-    const tools=document.createElement('div');tools.innerHTML='<div class="vocabStats"><div><b id="enhLearned">0</b><small>aprendidas</small></div><div><b id="enhToday">0</b><small>revisadas hoje</small></div><div><b id="enhDays">0</b><small>dias com revisão</small></div></div><input class="formfield" id="enhVocabSearch" type="search" placeholder="Buscar palavra ou significado…" aria-label="Buscar vocabulário"><div class="vocabFilters" role="tablist" aria-label="Filtro do vocabulário"><button type="button" class="vocabFilter active" data-enh-filter="all">Todos</button><button type="button" class="vocabFilter" data-enh-filter="favorites">Favoritos</button><button type="button" class="vocabFilter" data-enh-filter="recent">Recentes</button><button type="button" class="vocabFilter" data-enh-filter="learned">Aprendidas</button></div><div class="row2"><button class="btn g" id="enhAnki" type="button">Exportar Anki (.txt)</button><button class="btn g" id="enhReview" type="button">Revisar agora</button></div>';
+    const starterDeck=[
+      ["hello","olá","Hello! How are you?"],
+      ["good morning","bom dia","Good morning, everyone."],
+      ["please","por favor","Could you help me, please?"],
+      ["thank you","obrigado(a)","Thank you for your help."],
+      ["you're welcome","de nada","You're welcome. Have a nice day."],
+      ["excuse me","com licença","Excuse me, where is the station?"],
+      ["I'm sorry","sinto muito / desculpe","I'm sorry I'm late."],
+      ["how are you?","como você está?","Hi, how are you today?"],
+      ["I don't understand","eu não entendo","I don't understand this word."],
+      ["could you repeat that?","você poderia repetir?","Could you repeat that, please?"],
+      ["what does it mean?","o que isso significa?","What does this expression mean?"],
+      ["I think so","acho que sim","Is the shop open? I think so."],
+      ["maybe","talvez","Maybe we can meet tomorrow."],
+      ["of course","claro","Of course, I can help you."],
+      ["actually","na verdade","Actually, I live near here."],
+      ["usually","geralmente","I usually wake up at seven."],
+      ["sometimes","às vezes","I sometimes walk to work."],
+      ["always","sempre","She always drinks coffee in the morning."],
+      ["never","nunca","I never skip breakfast."],
+      ["figure out","descobrir / entender","I need to figure out how this works."],
+      ["find out","descobrir / ficar sabendo","I just found out the good news."],
+      ["give up","desistir","Don't give up on learning English."],
+      ["keep going","continue / siga em frente","Keep going; you're making progress."],
+      ["look for","procurar","I'm looking for my keys."],
+      ["run out of","ficar sem","We've run out of milk."],
+      ["get along","dar-se bem","I get along well with my coworkers."],
+      ["take your time","não tenha pressa","Take your time; there's no rush."],
+      ["it depends","depende","It depends on the weather."],
+      ["I'm used to","estou acostumado(a) a","I'm used to getting up early."],
+      ["that makes sense","isso faz sentido","That makes sense now."]
+    ];
+    function ensureStarterDeck(showToast){
+      const existing=new Map(vocabItems.map(v=>[(v.word||'').toLowerCase(),v]));
+      let changed=false,added=0;
+      starterDeck.forEach(([word,meaning,example],i)=>{
+        const key=word.toLowerCase(),prior=existing.get(key);
+        if(prior){
+          if(prior.source!=='starter'){prior.source='starter';changed=true}
+          if(!prior.example){prior.example=example;changed=true}
+          if(!prior.id){prior.id='starter-'+(i+1);changed=true}
+        }else{
+          const card={id:'starter-'+(i+1),word,meaning,example,source:'starter',createdAt:Date.now(),reviewCount:0,intervalDays:0,ease:2.5,dueAt:0,lastReviewed:0,lastReviewedDay:'',reviewDays:[],learned:false,favorite:false};
+          vocabItems.push(card);existing.set(key,card);added++;changed=true;
+        }
+      });
+      if(changed&&!sv('echo.vocabulary',vocabItems)){toast('Não foi possível salvar o baralho inicial.');return false}
+      if(added&&showToast)toast(added+' cartões iniciais carregados.');
+      if($('enhDeckStatus'))$('enhDeckStatus').textContent='Baralho local: '+vocabItems.length+' cartões/palavras · '+vocabItems.filter(v=>v.source==='starter').length+' cartões essenciais · revisões salvas neste aparelho.';
+      return true;
+    }
+    const tools=document.createElement('div');tools.innerHTML='<div class="vocabStats"><div><b id="enhLearned">0</b><small>aprendidas</small></div><div><b id="enhToday">0</b><small>revisadas hoje</small></div><div><b id="enhDays">0</b><small>dias com revisão</small></div></div><input class="formfield" id="enhVocabSearch" type="search" placeholder="Buscar palavra ou significado…" aria-label="Buscar vocabulário"><div class="vocabFilters" role="tablist" aria-label="Filtro do vocabulário"><button type="button" class="vocabFilter active" data-enh-filter="all">Todos</button><button type="button" class="vocabFilter" data-enh-filter="favorites">Favoritos</button><button type="button" class="vocabFilter" data-enh-filter="recent">Recentes</button><button type="button" class="vocabFilter" data-enh-filter="learned">Aprendidas</button></div><div class="row2"><button class="btn g" id="enhAnki" type="button">Exportar TSV para Anki</button><button class="btn g" id="enhReview" type="button">Revisar cartões</button></div><button class="btn g" id="enhLoadStarter" type="button" style="width:100%;margin-top:9px">Carregar cartões iniciais (30)</button><p class="pagefootnote" id="enhDeckStatus" role="status">Baralho local: seus cartões e revisões são guardados neste aparelho.</p>';
     vocabForm.insertAdjacentElement('beforebegin',tools);
     let filter='all';
     function markReview(v){const day=localDay();v.lastReviewed=Date.now();v.lastReviewedDay=day;v.reviewDays=Array.from(new Set([...(v.reviewDays||[]),day]))}
@@ -1060,7 +1200,49 @@ syncBottomNav(document.querySelector('.screen.on')?.id||'welcome');
     $('enhVocabSearch').addEventListener('input',renderVocab);
     tools.querySelectorAll('[data-enh-filter]').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.enhFilter;tools.querySelectorAll('[data-enh-filter]').forEach(x=>x.classList.toggle('active',x===b));renderVocab()}));
     $('enhAnki').onclick=()=>{if(!vocabItems.length)return toast('Adicione palavras antes de exportar.');const clean=x=>String(x||'').replace(/[\t\r\n]+/g,' ').trim(),tsv=vocabItems.map(v=>clean(v.word)+String.fromCharCode(9)+clean(v.meaning)+String.fromCharCode(9)+'English AI').join(String.fromCharCode(10));try{if(NB&&typeof NativeBridge.copyText==='function'){NativeBridge.copyText(tsv);toast('Cartões copiados. Importe no Anki como campos separados por tabulação.');return}const blob=new Blob([String.fromCharCode(65279)+tsv],{type:'text/tab-separated-values;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='english-ai-anki-'+localDay()+'.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Arquivo para Anki preparado.')}catch(e){toast('Exportação não disponível neste WebView.')}};
-    $('enhReview').onclick=()=>{const x=vocabItems.find(v=>!v.learned)||vocabItems[0];if(!x)return toast('Adicione palavras para revisar.');markReview(x);save();renderVocab();startLesson('Run a short spaced-repetition review for the English expression "'+x.word.replace(/["\\]/g,'')+'". Portuguese meaning: "'+(x.meaning||'not supplied').replace(/["\\]/g,'')+'". Ask me to recall the meaning, then show a natural example and ask me to use it in a sentence.')};
+    $('enhLoadStarter').onclick=()=>{if(ensureStarterDeck(true)){renderVocab();}};
+    const reviewLayer=document.createElement('div');reviewLayer.id='vocabReviewLayer';reviewLayer.hidden=true;reviewLayer.innerHTML='<div class="vocabReviewCard" role="dialog" aria-modal="true" aria-labelledby="reviewFront"><button type="button" id="reviewClose" class="reviewClose" aria-label="Fechar revisão">✕</button><small id="reviewCounter" class="eyebrow">Cartão 1</small><h2 id="reviewFront"></h2><button type="button" id="reviewReveal" class="btn g">Mostrar resposta</button><div id="reviewAnswer" hidden><h3 id="reviewMeaning"></h3><p id="reviewExample"></p><p class="pagefootnote" id="reviewProgress"></p><div class="reviewRatings"><button type="button" data-review-grade="again">Errei</button><button type="button" data-review-grade="hard">Difícil</button><button type="button" data-review-grade="good">Bom</button><button type="button" data-review-grade="easy">Fácil</button></div></div></div>';
+    vocabPage.appendChild(reviewLayer);
+    const reviewStyle=document.createElement('style');reviewStyle.textContent='#vocabReviewLayer[hidden]{display:none}#vocabReviewLayer{position:fixed;inset:0;z-index:999;background:rgba(2,8,20,.88);display:grid;place-items:center;padding:18px}.vocabReviewCard{position:relative;width:min(100%,520px);max-height:90vh;overflow:auto;background:#10223b;border:1px solid #29476c;border-radius:22px;padding:28px 20px 20px;text-align:center;color:#eef6ff}.vocabReviewCard h2{font-size:30px;margin:28px 0}.vocabReviewCard h3{font-size:22px}.reviewClose{position:absolute;right:14px;top:12px;border:0;background:transparent;color:inherit;font-size:20px}.reviewRatings{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:16px}.reviewRatings button{padding:12px 4px;border-radius:10px;border:1px solid #38577e;background:#193553;color:white}';
+    document.head.appendChild(reviewStyle);
+    let reviewQueue=[],reviewIndex=0,reviewRevealed=false;
+    function drawReview(){
+      const layer=$('vocabReviewLayer');if(reviewIndex>=reviewQueue.length){$('reviewFront').textContent='Revisão concluída!';$('reviewCounter').textContent='Tudo certo';$('reviewReveal').hidden=true;$('reviewAnswer').hidden=true;return}
+      const v=reviewQueue[reviewIndex];reviewRevealed=false;$('reviewCounter').textContent='Cartão '+(reviewIndex+1)+' de '+reviewQueue.length;$('reviewFront').textContent=v.word;$('reviewReveal').hidden=false;$('reviewAnswer').hidden=true;
+      $('reviewMeaning').textContent=v.meaning||'Significado não informado';$('reviewExample').textContent=v.example||'';$('reviewProgress').textContent='Revisões: '+(v.reviewCount||0)+' · Intervalo: '+(v.intervalDays||0)+' dia(s)';
+    }
+    function startLocalReview(){
+      ensureStarterDeck(false);
+      const now=Date.now();reviewQueue=vocabItems.filter(v=>!v.dueAt||v.dueAt<=now);
+      if(!reviewQueue.length)reviewQueue=vocabItems.slice().sort((a,b)=>(a.dueAt||0)-(b.dueAt||0)).slice(0,10);
+      if(!reviewQueue.length)return toast('Não há cartões para revisar.');
+      reviewQueue=reviewQueue.slice().sort((a,b)=>(a.dueAt||0)-(b.dueAt||0));reviewIndex=0;$('vocabReviewLayer').hidden=false;drawReview();
+    }
+    $('enhReview').onclick=startLocalReview;
+    $('reviewClose').onclick=()=>{$('vocabReviewLayer').hidden=true;renderVocab()};
+    $('reviewReveal').onclick=()=>{reviewRevealed=true;$('reviewAnswer').hidden=false;$('reviewReveal').hidden=true};
+    reviewLayer.querySelectorAll('[data-review-grade]').forEach(btn=>btn.addEventListener('click',()=>{
+      if(!reviewRevealed)return;
+      const v=reviewQueue[reviewIndex],grade=btn.dataset.reviewGrade,now=Date.now(),oldInterval=Math.max(0,Number(v.intervalDays)||0);
+      v.reviewCount=(Number(v.reviewCount)||0)+1;v.lastReviewed=now;v.lastReviewedDay=localDay();v.reviewDays=Array.from(new Set([...(v.reviewDays||[]),v.lastReviewedDay]));
+      v.ease=Number(v.ease)||2.5;
+      if(grade==='again'){v.intervalDays=0;v.dueAt=now+60*1000;v.ease=Math.max(1.3,v.ease-.2);v.learned=false}
+      else if(grade==='hard'){v.intervalDays=Math.max(1,Math.round(oldInterval?oldInterval*1.2:1));v.dueAt=now+v.intervalDays*86400000;v.ease=Math.max(1.3,v.ease-.15)}
+      else if(grade==='good'){v.intervalDays=oldInterval<1?1:oldInterval<3?3:Math.max(4,Math.round(oldInterval*v.ease));v.dueAt=now+v.intervalDays*86400000}
+      else {v.intervalDays=oldInterval<1?4:Math.max(5,Math.round(oldInterval*(v.ease+.5)));v.dueAt=now+v.intervalDays*86400000;v.ease=Math.min(3.2,v.ease+.15)}
+      v.learned=v.learned||v.intervalDays>=21;
+      if(!save())return;
+      reviewIndex++;drawReview();renderVocab();
+    }));
+    $('enhAnki').onclick=()=>{
+      if(!vocabItems.length)return toast('Adicione palavras antes de exportar.');
+      const clean=x=>String(x??'').replace(/[\t\r\n]+/g,' ').trim();
+      const tagsFor=v=>['english_ai',v.source==='starter'?'starter_deck':'personal',v.learned?'learned':'learning',v.favorite?'favorite':'', 'reviews_'+(Number(v.reviewCount)||0),'interval_'+(Number(v.intervalDays)||0)+'d',v.lastReviewedDay?'last_review_'+v.lastReviewedDay:'',v.dueAt?'due_'+new Date(v.dueAt).toISOString().slice(0,10):''].filter(Boolean).join(' ');
+      const rows=vocabItems.map(v=>[clean(v.word),clean([v.meaning,v.example?'Example: '+v.example:'', 'Progress: '+(Number(v.reviewCount)||0)+' reviews; interval '+(Number(v.intervalDays)||0)+' days'].filter(Boolean).join('\n')),tagsFor(v)].map(clean).join(String.fromCharCode(9)));
+      const tsv='#separator:Tab\n#html:false\n#tags column:3\n'+rows.join(String.fromCharCode(10))+'\n';
+      const filename='english-ai-anki-'+localDay()+'.tsv';
+      try{if(NB&&typeof NativeBridge.exportAnkiTsv==='function'){NativeBridge.exportAnkiTsv(tsv,filename);return}const blob=new Blob(['\ufeff'+tsv],{type:'text/tab-separated-values;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('TSV pronto para importar no Anki.')}catch(e){toast('Não foi possível exportar o TSV neste dispositivo.')}
+    };
   }
 
   // The HTML already contains the single canonical seven-item drawer. Do not inject a second menu here.
