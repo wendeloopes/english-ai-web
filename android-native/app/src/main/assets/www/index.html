@@ -780,7 +780,12 @@ if (window.NativeBridge) {
 
   };
   window.Native.onOverlayText = text => { try{go('chat');$('inp').value=String(text||'');$('inp').focus();setTimeout(()=>{const btn=$('send');if(btn)btn.click()},250);}catch(e){} };
-  $('trainVoiceButton')?.addEventListener('click',()=>{
+  // Event delegation is required because #trainVoiceButton is injected dynamically
+  // by installVoiceAssistantControls() after this script section has already run.
+  document.addEventListener('click',(event)=>{
+    const button=event.target instanceof Element ? event.target.closest('#trainVoiceButton') : null;
+    if(!button) return;
+    event.preventDefault();
     const el=$('voiceCalibrationStatus');
     if(el){el.textContent='Iniciando treino de voz…';el.style.color='';}
     console.debug('[VoiceTraining] Train button clicked; NativeBridge available:',!!NB);
