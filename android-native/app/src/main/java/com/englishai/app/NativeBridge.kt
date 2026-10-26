@@ -51,6 +51,8 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     @Volatile private var listeningStartupPending = false
     // Retry one transient service disconnect without switching away from the offline provider.
     @Volatile private var speechDisconnectRetries = 0
+    @Volatile private var ttsReady = false
+    private var pendingSpeech: Array<String>? = null
     @Volatile private var modelLoadFailure: String? = null
     private val modelFile get() = File(activity.filesDir, "model.litertlm")
     private val backupModelFile get() = File(activity.filesDir, "model.bak")
@@ -66,16 +68,30 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         }
     }
     init {
-        tts = TextToSpeech(activity) { status -> if (status == TextToSpeech.SUCCESS) {
-            tts?.language = Locale.US
-            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(id: String?) {}
-                override fun onDone(id: String?) { id?.let { call("onTtsDone", JSONObject.quote(it)) } }
-                override fun onError(id: String?) { id?.let { call("onTtsDone", JSONObject.quote(it)) } }
-                override fun onRangeStart(id: String?, start: Int, end: Int, frame: Int) { id?.let { call("onTtsRange", JSONObject.quote(it), start.toString()) } }
-            })
-            refreshVoices()
-        } }
+        tts = TextToSpeech(activity) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                tts?.language = Locale.US
+                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(id: String?) {}
+                    override fun onDone(id: String?) { id?.let { call("onTtsDone", JSONObject.quote(it)) } }
+                    override fun onError(id: String?) { id?.let { call("onTtsDone", JSONObject.quote(it)) } }
+                    override fun onRangeStart(id: String?, start: Int, end: Int, frame: Int) { id?.let { call("onTtsRange", JSONObject.quote(it), start.toString()) } }
+                })
+                ttsReady = true
+                refreshVoices()
+                // A hotword can arrive before Android finishes initializing TextToSpeech.
+                // Replay that first acknowledgement instead of silently dropping it.
+                val pending = pendingSpeech
+                pendingSpeech = null
+                if (pending != null && pending.size >= 4) speak(pending[0], pending[1], pending[2], pending[3])
+            } else {
+                ttsReady = false
+                val pending = pendingSpeech
+                pendingSpeech = null
+                if (pending != null && pending.isNotEmpty()) call("onTtsDone", JSONObject.quote(pending[0]))
+                android.util.Log.e("EnglishAI-TTS", "TextToSpeech initialization failed: status=$status")
+            }
+        }
     }
     @JavascriptInterface fun exitApp() { main.post { activity.finish() } }
     private fun broadcastOverlayUserCaption(text: String, isFinal: Boolean) {
@@ -667,7 +683,25 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
 
     @JavascriptInterface fun getVoices() { refreshVoices() }
     fun refreshVoices() { val arr = JSONArray(); tts?.voices?.filter { it.locale.language == "en" }?.forEach { v -> arr.put(JSONObject().put("name", v.name).put("lang", v.locale.toLanguageTag())) }; call("onVoices", JSONObject.quote(arr.toString())) }
-    @JavascriptInterface fun speak(id: String, text: String, rate: String, voiceName: String) { main.post { try { val clean = EnglishTtsManager.sanitizeText(text); if (clean.isBlank()) { call("onTtsDone", JSONObject.quote(id)); return@post }; tts?.language = Locale.US; tts?.setSpeechRate(rate.toFloatOrNull() ?: 1f); tts?.voices?.firstOrNull { it.name == voiceName && it.locale.language == "en" }?.let { tts?.voice = it }; tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, id) } catch (_: Exception) { call("onTtsDone", JSONObject.quote(id)) } } }
+    @JavascriptInterface fun speak(id: String, text: String, rate: String, voiceName: String) { main.post {
+        if (!ttsReady || tts == null) {
+            pendingSpeech = arrayOf(id, text, rate, voiceName)
+            android.util.Log.d("EnglishAI-TTS", "TTS not ready; queued utterance $id")
+            return@post
+        }
+        try {
+            val clean = EnglishTtsManager.sanitizeText(text)
+            if (clean.isBlank()) { call("onTtsDone", JSONObject.quote(id)); return@post }
+            tts?.language = Locale.US
+            tts?.setSpeechRate(rate.toFloatOrNull() ?: 1f)
+            tts?.voices?.firstOrNull { it.name == voiceName && it.locale.language == "en" }?.let { tts?.voice = it }
+            val result = tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, id)
+            if (result == TextToSpeech.ERROR) call("onTtsDone", JSONObject.quote(id))
+        } catch (e: Exception) {
+            android.util.Log.e("EnglishAI-TTS", "Could not speak utterance $id", e)
+            call("onTtsDone", JSONObject.quote(id))
+        }
+    } }
     @JavascriptInterface fun stopSpeaking() { main.post { tts?.stop() } }
     @JavascriptInterface fun downloadOfflineSpeechModel() { offlineSpeech.downloadModel() }
     @JavascriptInterface fun isOfflineSpeechModelInstalled(): Boolean = offlineSpeech.isInstalled()
