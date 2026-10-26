@@ -219,6 +219,33 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
     @JavascriptInterface fun isHotwordEnabled(): Boolean =
         activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE).getBoolean("hotwordEnabled", false)
 
+    /** Restore a previously opted-in listener when the user opens the app, never directly from BOOT_COMPLETED. */
+    fun restoreHotwordIfEnabled() {
+        val prefs = activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("hotwordEnabled", false)) return
+        val micGranted = activity.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val notificationsGranted = Build.VERSION.SDK_INT < 33 ||
+            activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!micGranted || !notificationsGranted) {
+            prefs.edit().putBoolean("hotwordEnabled", false).apply()
+            call("onHotwordStatus", "false", JSONObject.quote("Voice activation was paused because microphone or notification permission is missing. Re-enable it in settings."))
+            return
+        }
+        if (!offlineSpeech.isInstalled()) {
+            prefs.edit().putBoolean("hotwordEnabled", false).apply()
+            call("onHotwordStatus", "false", JSONObject.quote("Voice activation was paused because the Vosk model is missing. Download the offline speech engine and enable the trigger again."))
+            return
+        }
+        try {
+            val intent = Intent(activity, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_START)
+            if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(intent) else activity.startService(intent)
+            call("onHotwordStatus", "true", JSONObject.quote("Vosk offline voice activation restored while the app is open."))
+        } catch (e: Exception) {
+            prefs.edit().putBoolean("hotwordEnabled", false).apply()
+            call("onHotwordStatus", "false", JSONObject.quote(e.message ?: "Could not restore the Vosk voice activation service."))
+        }
+    }
+
     /** Start the Vosk-only hotword service only after runtime permissions and its model are ready. */
     @JavascriptInterface fun setHotwordEnabled(enabled: Boolean) {
         val prefs = activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
