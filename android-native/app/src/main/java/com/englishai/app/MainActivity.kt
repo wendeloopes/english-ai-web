@@ -2,6 +2,7 @@ package com.englishai.app
 
 import android.Manifest
 import android.content.Intent
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.webkit.WebChromeClient
@@ -14,6 +15,27 @@ import androidx.core.content.ContextCompat
 import androidx.webkit.WebViewAssetLoader
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        @Volatile private var activeInstance: MainActivity? = null
+
+        /** Dispatch activation into the live WebView so its local model/TTS flow actually starts. */
+        fun notifyHotwordActivation(context: Context) {
+            val current = activeInstance
+            if (current != null && current.pageReady && current::web.isInitialized) {
+                current.runOnUiThread {
+                    current.web.evaluateJavascript("window.Native && window.Native.onHotwordActivated && window.Native.onHotwordActivated()", null)
+                }
+                return
+            }
+            val launch = Intent(context, MainActivity::class.java).apply {
+                action = HotwordListeningService.ACTION_HOTWORD_DETECTED
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            try { context.startActivity(launch) } catch (e: Exception) {
+                android.util.Log.e("EnglishAI-VoiceTraining", "Could not bring assistant WebView to activation flow", e)
+            }
+        }
+    }
     private lateinit var web: WebView
     private lateinit var bridge: NativeBridge
     private var pageReady = false
@@ -94,6 +116,7 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        activeInstance = this
         pendingHotwordActivation = intent?.action == HotwordListeningService.ACTION_HOTWORD_DETECTED
         pauseHotwordForActivation = pendingHotwordActivation
         if (intent?.action == AssistantOverlayService.ACTION_OVERLAY_TEXT) {
@@ -198,5 +221,5 @@ class MainActivity : ComponentActivity() {
     override fun onStart() { super.onStart(); idle.removeCallbacks(unloadTask); if (::bridge.isInitialized) bridge.setForeground(true) }
     override fun onTrimMemory(level: Int) { super.onTrimMemory(level); if (level >= 15 && ::bridge.isInitialized) bridge.trimMemory() }
     override fun onBackPressed() { web.evaluateJavascript("window.Native && window.Native.onBack ? window.Native.onBack() : false") { handled -> if (handled != "true") finish() } }
-    override fun onDestroy() { if (::bridge.isInitialized) bridge.close(); if (::web.isInitialized) web.destroy(); super.onDestroy() }
+    override fun onDestroy() { if (activeInstance === this) activeInstance = null; if (::bridge.isInitialized) bridge.close(); if (::web.isInitialized) web.destroy(); super.onDestroy() }
 }
