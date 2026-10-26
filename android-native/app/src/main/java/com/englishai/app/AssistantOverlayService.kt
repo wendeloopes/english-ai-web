@@ -49,7 +49,19 @@ class AssistantOverlayService : Service() {
                 }
                 ACTION_TRANSCRIPT -> {
                     val text = intent.getStringExtra(EXTRA_TRANSCRIPT).orEmpty().trim()
-                    if (text.isNotEmpty()) captionView?.text = text
+                    if (text.isNotEmpty()) {
+                        val index = intent.getIntExtra(EXTRA_TRANSCRIPT_INDEX, -1)
+                        val caption = android.text.SpannableString(text)
+                        if (index in text.indices && !text[index].isWhitespace()) {
+                            var start = index
+                            var end = index
+                            while (start > 0 && !text[start - 1].isWhitespace()) start--
+                            while (end < text.length && !text[end].isWhitespace()) end++
+                            caption.setSpan(android.text.style.ForegroundColorSpan(Color.rgb(205, 190, 255)), start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                            caption.setSpan(android.text.style.StyleSpan(Typeface.BOLD), start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        }
+                        captionView?.text = caption
+                    }
                 }
             }
         }
@@ -235,6 +247,7 @@ class AssistantOverlayService : Service() {
         const val ACTION_ACTIVATED = "com.englishai.app.OVERLAY_ACTIVATED"
         const val ACTION_TRANSCRIPT = "com.englishai.app.TRANSCRIPT"
         const val EXTRA_TRANSCRIPT = "transcript_text"
+        const val EXTRA_TRANSCRIPT_INDEX = "transcript_index"
         const val EXTRA_TRANSCRIPT_FINAL = "transcript_final"
         const val ACTION_CLOSE = "com.englishai.app.OVERLAY_CLOSE"
         const val ACTION_OVERLAY_TEXT = "com.englishai.app.OVERLAY_TEXT"
