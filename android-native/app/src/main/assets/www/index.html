@@ -657,7 +657,7 @@ $('cStop').onclick=stopAll;
 
 /* ================= NAV / PANELS ================= */
 function go(id){document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('on',s.id===id));sv('echo.screen',id)}
-const panel=(id,on)=>{$(id).classList.toggle('on',on);$('veil').classList.toggle('on',on);if(on&&id==='drawer')list()};
+const panel=(id,on)=>{$(id).classList.toggle('on',on);$('veil').classList.toggle('on',on);if(on&&id==='drawer')list();if(on&&id==='sheet'&&typeof window.refreshVoiceTrainingModelStatus==='function')window.refreshVoiceTrainingModelStatus()};
 const closeAll=()=>{$('drawer').classList.remove('on');$('sheet').classList.remove('on');$('plug').classList.remove('on');$('errs').classList.remove('on');$('veil').classList.remove('on')};
 $('veil').onclick=closeAll;$('closeSheet').onclick=closeAll;
 ['vMenu','cMenu'].forEach(i=>$(i).onclick=()=>panel('drawer',true));
@@ -897,16 +897,30 @@ $('saveRoutine').onclick=saveRoutineSettings;
   $('saveRoutine').insertAdjacentElement('afterend',box);
   const alarm=$('morningAlarmToggle'),hotword=$('hotwordToggle');
   const offlineBtn=$('offlineSpeechDownload'),offlineStatus=$('offlineSpeechStatus');
-  if(NB){
-    try{alarm.checked=!!NativeBridge.isMorningAlarmEnabled()}catch(e){}
-    try{hotword.checked=!!NativeBridge.isHotwordEnabled()}catch(e){}
+  window.refreshVoiceTrainingModelStatus=()=>{
+    if(!NB){offlineStatus.textContent='This feature requires the native Android app.';offlineBtn.disabled=true;return;}
+    offlineStatus.textContent='Checking Vosk model in app storage/assets…';
     try{
+      // Native isOfflineSpeechModelInstalled() validates internal files and installs a bundled
+      // assets model into filesDir automatically if one is present.
       if(NativeBridge.isOfflineSpeechModelInstalled()){
         offlineStatus.textContent='Offline English speech engine is installed and ready.';
         offlineBtn.textContent='Downloaded ✓';offlineBtn.disabled=true;
-      }else offlineStatus.textContent='Not installed. Download once while connected to the internet; the hotword stays disabled until this model is ready.';
-    }catch(e){offlineStatus.textContent='Available in the native Android app.'}
-  }else{offlineStatus.textContent='This feature requires the native Android app.';offlineBtn.disabled=true}
+        const trainingStatus=$('voiceCalibrationStatus');
+        if(trainingStatus)trainingStatus.textContent='Modelo Vosk verificado no armazenamento interno. Pronto para treinar “Hi English AI”.';
+      }else{
+        offlineStatus.textContent='Not installed. Download once while connected to the internet; the hotword stays disabled until this model is ready.';
+        offlineBtn.textContent='Download offline speech engine';offlineBtn.disabled=false;
+        const trainingStatus=$('voiceCalibrationStatus');
+        if(trainingStatus)trainingStatus.textContent='Modelo Vosk não encontrado no armazenamento interno nem nos assets. Baixe o mecanismo offline para continuar.';
+      }
+    }catch(e){offlineStatus.textContent='Could not verify the offline speech model. Close Settings and retry.';console.error('[VoiceTraining] Model check failed',e);}
+  };
+  if(NB){
+    try{alarm.checked=!!NativeBridge.isMorningAlarmEnabled()}catch(e){}
+    try{hotword.checked=!!NativeBridge.isHotwordEnabled()}catch(e){}
+    window.refreshVoiceTrainingModelStatus();
+  }else window.refreshVoiceTrainingModelStatus();
   offlineBtn.addEventListener('click',()=>{
     if(!NB||typeof NativeBridge.downloadOfflineSpeechModel!=='function'){offlineStatus.textContent='This feature requires the native Android app.';return}
     offlineBtn.disabled=true;offlineStatus.textContent='Starting download…';
