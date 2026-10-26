@@ -132,6 +132,7 @@ class HotwordListeningService : Service() {
     @Volatile private var voskModel: Model? = null
     @Volatile private var voskRecognizer: Recognizer? = null
     @Volatile private var voskThread: Thread? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -143,23 +144,41 @@ class HotwordListeningService : Service() {
             .setContentText("Say “Hi, English AI!” · Tap Stop to disable the microphone")
             .addAction(android.R.drawable.ic_media_pause, "Stop listening", stopIntent)
             .setOngoing(true).build())
-        active = true
-        startRecognition()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
             ACTION_PAUSE -> { pauseRecognition(); return START_STICKY }
-            ACTION_RESUME -> { activationHandled = false; restarting = false; active = true; startRecognition(); return START_STICKY }
+            ACTION_RESUME, ACTION_START, null -> {
+                activationHandled = false
+                restarting = false
+                active = true
+                acquireHotwordWakeLock()
+                startRecognition()
+                return START_STICKY
+            }
+            else -> return START_STICKY
         }
-        return START_STICKY
+    }
+
+    private fun acquireHotwordWakeLock() {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (wakeLock == null) wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:Hotword").apply { setReferenceCounted(false) }
+            if (wakeLock?.isHeld != true) wakeLock?.acquire()
+        } catch (_: Exception) { /* Foreground service remains active even if a device forbids wake locks. */ }
+    }
+
+    private fun releaseHotwordWakeLock() {
+        try { if (wakeLock?.isHeld == true) wakeLock?.release() } catch (_: Exception) {}
     }
 
     private fun pauseRecognition() {
         active = false
         restarting = false
         stopVoskHotword()
+        releaseHotwordWakeLock()
         try { recognizer?.cancel() } catch (_: Exception) {}
         try { recognizer?.destroy() } catch (_: Exception) {}
         recognizer = null
@@ -213,9 +232,13 @@ class HotwordListeningService : Service() {
                         checkPhrase(bundle, isFinal)
                     }
                 }
-            } catch (_: Exception) {
-                // Do not silently switch this Vosk path to cloud recognition.
-                if (active && voskActive) postOfflineSpeechUnavailable()
+            } catch (e: Exception) {
+                // Never fail silently or switch to a network-capable recognizer.
+                if (active && voskActive) {
+                    postOfflineSpeechUnavailable(e.message ?: "O Vosk não conseguiu iniciar o microfone ou carregar o modelo.")
+                    active = false
+                    stopSelf()
+                }
             } finally {
                 voskActive = false
                 try { audio?.stop() } catch (_: Exception) {}
@@ -235,58 +258,22 @@ class HotwordListeningService : Service() {
         try { voskRecorder?.stop() } catch (_: Exception) {}
     }
 
+    /**
+     * Hotword recognition is deliberately Vosk-only. Do not silently fall back to Android's
+     * SpeechRecognizer (which may use a network provider and hides a missing Vosk model).
+     */
     private fun startRecognition() {
-        if (!active || restarting) return
-        val voskModelDir = java.io.File(filesDir, "vosk-model-en-us")
-        if (java.io.File(voskModelDir, "am").isDirectory &&
-            java.io.File(voskModelDir, "conf").isDirectory &&
-            java.io.File(voskModelDir, "graph").isDirectory) {
-            startVoskHotword()
-            return
-        }
-        if (Build.VERSION.SDK_INT < 31 || !SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
-            ensureAssistantChannels(this)
-            val n = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, ASSISTANT_CHANNEL) else Notification.Builder(this)
-            getSystemService(NotificationManager::class.java).notify(4045, n.setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("Offline voice activation unavailable")
-                .setContentText("Install on-device English speech recognition, then enable “Hi, English AI!” again.")
-                .setContentIntent(openAssistantIntent(this)).setAutoCancel(true).build())
+        if (!active || restarting || voskActive) return
+        val modelDir = java.io.File(filesDir, "vosk-model-en-us")
+        val complete = java.io.File(modelDir, "am").isDirectory &&
+            java.io.File(modelDir, "conf").isDirectory &&
+            java.io.File(modelDir, "graph").isDirectory
+        if (!complete) {
+            postOfflineSpeechUnavailable("O modelo Vosk de inglês não está instalado. Abra o English AI, baixe o mecanismo de voz offline e ative o gatilho novamente.")
             stopSelf()
             return
         }
-        try {
-            recognizer?.destroy()
-            recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
-            recognizer?.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: android.os.Bundle?) {}
-                override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() {}
-                override fun onPartialResults(results: android.os.Bundle?) { checkPhrase(results, false) }
-                override fun onResults(results: android.os.Bundle?) { checkPhrase(results, true); restartSoon() }
-                override fun onError(error: Int) {
-                    if (error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE ||
-                        error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED) {
-                        // Stay strictly offline: do not silently switch to network recognition or
-                        // repeatedly reopen a recognizer that cannot provide English (US) locally.
-                        postOfflineSpeechUnavailable()
-                        stopSelf()
-                    } else {
-                        restartSoon()
-                    }
-                }
-                override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
-            })
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
-                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            }
-            recognizer?.startListening(intent)
-        } catch (_: Exception) { restartSoon() }
+        startVoskHotword()
     }
 
     private fun checkPhrase(bundle: android.os.Bundle?, final: Boolean) {
@@ -359,14 +346,14 @@ class HotwordListeningService : Service() {
             .setContentIntent(openIntent).setAutoCancel(true).build())
     }
 
-    private fun postOfflineSpeechUnavailable() {
+    private fun postOfflineSpeechUnavailable(detail: String = "O modelo Vosk de inglês não está disponível.") {
         ensureAssistantChannels(this)
         val n = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, ASSISTANT_CHANNEL) else Notification.Builder(this)
         getSystemService(NotificationManager::class.java).notify(
             4045,
             n.setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("Offline English speech data unavailable")
-                .setContentText("In the Google app, open Settings > Voice > Offline speech recognition and download English (US). Then reopen English AI and enable voice activation.")
+                .setContentTitle("English AI · gatilho offline indisponível")
+                .setContentText(detail.take(180))
                 .setContentIntent(openAssistantIntent(this))
                 .setAutoCancel(true)
                 .build()
@@ -385,6 +372,7 @@ class HotwordListeningService : Service() {
         active = false
         getSharedPreferences("english_ai_user_settings", MODE_PRIVATE).edit().putBoolean("hotwordEnabled", false).apply()
         stopVoskHotword()
+        releaseHotwordWakeLock()
         try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) {}
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
