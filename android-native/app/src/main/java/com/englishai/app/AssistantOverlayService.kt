@@ -185,21 +185,40 @@ class AssistantOverlayService : Service() {
     private class VoiceOrb(context: Context, private val level: () -> Float) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private var phase = 0f
+        private var smoothedEnergy = 0f
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             val cx = width / 2f; val cy = height / 2f
-            val energy = level().coerceIn(0f, 1f)
+            val target = level().coerceIn(0f, 1f)
+            smoothedEnergy += (target - smoothedEnergy) * .22f
+            val energy = smoothedEnergy
             val pulse = 1f + energy * .32f + kotlin.math.sin(phase) * .035f
             val r = min(width, height) * .28f * pulse
-            paint.shader = RadialGradient(cx-r*.18f, cy-r*.24f, r*1.45f,
-                intArrayOf(Color.argb(210, 220,205,255), Color.argb(185, 114,80,255), Color.argb(135, 29,13,76), Color.TRANSPARENT),
-                floatArrayOf(0f,.28f,.72f,1f), Shader.TileMode.CLAMP)
-            canvas.drawCircle(cx, cy, r*1.42f, paint)
-            paint.shader = null
-            paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.5f + energy*5f
-            paint.color = Color.argb((42+energy*105).toInt().coerceIn(0,160), 185,160,255)
-            canvas.drawCircle(cx, cy, r*(1.18f + energy*.34f), paint)
+
+            // Soft, translucent aura with a brighter center and a feathered edge.
             paint.style = Paint.Style.FILL
+            paint.shader = RadialGradient(cx-r*.18f, cy-r*.24f, r*1.48f,
+                intArrayOf(Color.argb(172, 220,205,255), Color.argb(142, 114,80,255), Color.argb(92, 29,13,76), Color.TRANSPARENT),
+                floatArrayOf(0f,.28f,.72f,1f), Shader.TileMode.CLAMP)
+            canvas.drawCircle(cx, cy, r*1.48f, paint)
+            paint.shader = null
+
+            // Fine animated contour and small orbiting light particles.
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 1.2f + energy*3.2f
+            paint.color = Color.argb((34+energy*94).toInt().coerceIn(0,135), 185,160,255)
+            canvas.drawCircle(cx, cy, r*(1.16f + energy*.28f), paint)
+            paint.style = Paint.Style.FILL
+            val density = resources.displayMetrics.density
+            for (i in 0 until 9) {
+                val angle = phase * (if (i % 2 == 0) 1f else -0.72f) + i * (Math.PI * 2.0 / 9.0)
+                val orbit = r * (1.18f + (i % 3) * .11f + energy * .13f)
+                val px = cx + kotlin.math.cos(angle).toFloat() * orbit
+                val py = cy + kotlin.math.sin(angle).toFloat() * orbit
+                val dot = density * (1.1f + ((i % 3) * .45f) + energy * 1.2f)
+                paint.color = Color.argb((45 + energy*135).toInt().coerceIn(0,185), 218,207,255)
+                canvas.drawCircle(px, py, dot, paint)
+            }
             phase += .045f + energy*.10f
             postInvalidateDelayed(32)
         }
