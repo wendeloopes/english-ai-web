@@ -316,7 +316,6 @@ class HotwordListeningService : Service() {
         } catch (_: Exception) {}
         restarting = true
         stopVoskHotword()
-        if (!isCalibration) active = false // The overlay owns the mic until it closes.
         try { recognizer?.cancel() } catch (_: Exception) {}
         try { recognizer?.destroy() } catch (_: Exception) {}
         recognizer = null
@@ -344,6 +343,7 @@ class HotwordListeningService : Service() {
         } else {
             val overlayAllowed = if (Build.VERSION.SDK_INT >= 23) android.provider.Settings.canDrawOverlays(this) else true
             if (overlayAllowed) {
+                active = false // The overlay owns the mic until it closes, then it resumes Vosk.
                 try {
                     val overlay = Intent(this, AssistantOverlayService::class.java).setAction(AssistantOverlayService.ACTION_SHOW)
                     if (Build.VERSION.SDK_INT >= 26) startForegroundService(overlay) else startService(overlay)
