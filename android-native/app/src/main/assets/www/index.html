@@ -776,11 +776,8 @@ if (window.NativeBridge) {
     const el=$('voiceCalibrationStatus');
     if(el){el.textContent='Voz calibrada com sucesso! Frase “Hi English AI” reconhecida.';el.style.color='#8dffbd';}
     toast("Voz reconhecida! I'm ready!");
-    try {
-      const Ctx=window.AudioContext||window.webkitAudioContext;
-      if(Ctx){const ctx=new Ctx(),osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sine';osc.frequency.setValueAtTime(1320,ctx.currentTime);osc.frequency.exponentialRampToValueAtTime(1760,ctx.currentTime+0.09);gain.gain.setValueAtTime(0.0001,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(0.18,ctx.currentTime+0.015);gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.22);osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+0.23);setTimeout(()=>ctx.close(),400);}
-    } catch(e) { console.debug('[VoiceTraining] WebAudio plin unavailable',e); }
-    // The native calibration service speaks “I'm ready!” once; this callback adds the UI confirmation tone.
+    // The native calibration service plays the confirmation tone and speaks “I'm ready!” once.
+
   };
   window.Native.onOverlayText = text => { try{go('chat');$('inp').value=String(text||'');$('inp').focus();setTimeout(()=>{const btn=$('send');if(btn)btn.click()},250);}catch(e){} };
   $('trainVoiceButton')?.addEventListener('click',()=>{
