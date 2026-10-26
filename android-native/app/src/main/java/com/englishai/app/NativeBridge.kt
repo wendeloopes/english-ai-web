@@ -28,7 +28,7 @@ import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.Executors
 
-class NativeBridge(private val activity: Activity, private val web: WebView, private val choose: () -> Unit, private val requestMic: () -> Unit, private val exportTsv: (String, String) -> Unit, private val requestHotwordPermissions: () -> Unit) {
+class NativeBridge(private val activity: Activity, private val web: WebView, private val choose: () -> Unit, private val requestMic: () -> Unit, private val exportTsv: (String, String) -> Unit, private val requestHotwordPermissions: () -> Unit, private val requestVoiceTrainingPermissions: () -> Unit) {
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private val engine = LiteRtEngine(activity)
@@ -283,16 +283,25 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         call("onHotwordStatus", "false", JSONObject.quote("Voice activation was not enabled because the required microphone/notification permission was denied."))
     }
 
-    /** Starts the on-device trigger calibration flow; the user must grant overlay access in Android settings first. */
+    /** JS entry point for the Train Voice button. */
+    @JavascriptInterface fun startVoiceTraining() = startVoiceCalibration()
+
+    /** Starts on-device trigger calibration; the permission callback resumes this flow automatically. */
     @JavascriptInterface fun startVoiceCalibration() {
         if (activity.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED ||
             (Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)) {
-            main.post { requestHotwordPermissions() }
-            call("onVoiceCalibrationStatus", "false", JSONObject.quote("Allow microphone and notification permissions, then tap Train again."))
+            call("onVoiceCalibrationStatus", "false", JSONObject.quote("Solicitando permissões de microfone/notificações…"))
+            main.post { requestVoiceTrainingPermissions() }
             return
         }
+        startVoiceCalibrationGranted()
+    }
+
+    fun startVoiceCalibrationGranted() {
+        android.util.Log.d("EnglishAI-VoiceTraining", "Permission granted; checking Vosk model and overlay permission")
         if (!offlineSpeech.isInstalled()) {
-            call("onVoiceCalibrationStatus", "false", JSONObject.quote("Download the Vosk offline speech engine first."))
+            android.util.Log.e("EnglishAI-VoiceTraining", "Vosk model missing in internal storage and no bundled asset could be installed")
+            call("onVoiceCalibrationStatus", "false", JSONObject.quote("Modelo Vosk ausente. Baixe o mecanismo offline primeiro; se o modelo estiver empacotado nos assets, ele será instalado automaticamente."))
             return
         }
         if (Build.VERSION.SDK_INT >= 23 && !android.provider.Settings.canDrawOverlays(activity)) {
@@ -306,10 +315,12 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         try {
             val prefs = activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
             prefs.edit().putBoolean("hotwordEnabled", true).apply()
+            android.util.Log.d("EnglishAI-VoiceTraining", "Starting HotwordListeningService ACTION_CALIBRATE")
             val intent = Intent(activity, HotwordListeningService::class.java).setAction(HotwordListeningService.ACTION_CALIBRATE)
             if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(intent) else activity.startService(intent)
             call("onVoiceCalibrationStatus", "false", JSONObject.quote("Listening for “Hi English AI”… say the phrase clearly."))
         } catch (e: Exception) {
+            android.util.Log.e("EnglishAI-VoiceTraining", "Could not start calibration service", e)
             call("onVoiceCalibrationStatus", "false", JSONObject.quote(e.message ?: "Could not start calibration."))
         }
     }
