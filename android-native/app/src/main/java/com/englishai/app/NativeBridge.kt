@@ -277,6 +277,10 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         }
     }
 
+    fun voiceTrainingPermissionDenied() {
+        call("onVoiceCalibrationStatus", "false", JSONObject.quote("Permissão de microfone/notificações negada. Autorize nas configurações do Android e tente novamente."))
+    }
+
     fun hotwordPermissionDenied() {
         activity.getSharedPreferences("english_ai_user_settings", android.content.Context.MODE_PRIVATE)
             .edit().putBoolean("hotwordEnabled", false).apply()
