@@ -57,6 +57,11 @@ class AssistantOverlayService : Service() {
         if (intent?.action == ACTION_CLOSE) { removeOverlay(); stopSelf(); return START_NOT_STICKY }
         if (Build.VERSION.SDK_INT >= 23 && !android.provider.Settings.canDrawOverlays(this)) { stopSelf(); return START_NOT_STICKY }
         if (root == null) showOverlay()
+        try {
+            val tone = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 85)
+            tone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 125)
+            main.postDelayed({ try { tone.release() } catch (_: Exception) {} }, 220)
+        } catch (_: Exception) {}
         startLevelMeter()
         return START_NOT_STICKY
     }
