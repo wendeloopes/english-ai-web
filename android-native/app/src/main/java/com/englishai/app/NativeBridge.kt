@@ -40,8 +40,8 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         { ok, message -> call("onOfflineSpeechModelStatus", ok.toString(), JSONObject.quote(message)) },
         { call("onSpeechReady") },
         { call("onSpeechStarted") },
-        { text -> call("onSpeechPartial", JSONObject.quote(text)) },
-        { text -> call("onSpeechEnd", JSONObject.quote(text)) },
+        { text -> call("onSpeechPartial", JSONObject.quote(text)); broadcastOverlayUserCaption(text, false) },
+        { text -> call("onSpeechEnd", JSONObject.quote(text)); broadcastOverlayUserCaption(text, true) },
         { message -> call("onSpeechError", JSONObject.quote(message)) }
     )
     @Volatile private var ptTranslator: Translator? = null
@@ -78,6 +78,15 @@ class NativeBridge(private val activity: Activity, private val web: WebView, pri
         } }
     }
     @JavascriptInterface fun exitApp() { main.post { activity.finish() } }
+    private fun broadcastOverlayUserCaption(text: String, isFinal: Boolean) {
+        val clean = text.trim().take(400)
+        if (clean.isEmpty()) return
+        val intent = Intent(AssistantOverlayService.ACTION_TRANSCRIPT).setPackage(activity.packageName)
+            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT, clean)
+            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_SOURCE, AssistantOverlayService.SOURCE_USER)
+            .putExtra(AssistantOverlayService.EXTRA_TRANSCRIPT_FINAL, isFinal)
+        try { activity.sendBroadcast(intent) } catch (_: Exception) {}
+    }
     /** Forward the English sentence currently spoken by the in-app tutor to the visual overlay. */
     @JavascriptInterface fun setOverlayCaption(text: String, charIndex: Int) {
         val clean = text.trim().take(400)
