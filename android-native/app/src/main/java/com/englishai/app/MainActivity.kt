@@ -19,6 +19,7 @@ class MainActivity : ComponentActivity() {
     private var pageReady = false
     private var pendingHotwordActivation = false
     private var pauseHotwordForActivation = false
+    private var pendingOverlayText = ""
     private var pendingAnkiTsv = ""
     private val pickModel = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) bridge.importModel(uri) }
     private val createAnkiExport = registerForActivityResult(ActivityResultContracts.CreateDocument("text/tab-separated-values")) { uri ->
@@ -81,6 +82,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         pendingHotwordActivation = intent?.action == HotwordListeningService.ACTION_HOTWORD_DETECTED
         pauseHotwordForActivation = pendingHotwordActivation
+        if (intent?.action == AssistantOverlayService.ACTION_OVERLAY_TEXT) {
+            pendingOverlayText = intent.getStringExtra(AssistantOverlayService.EXTRA_OVERLAY_TEXT).orEmpty()
+        }
         val prevHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             try { java.io.File(filesDir, "last_crash.txt").writeText(java.util.Date().toString() + "\n" + e.stackTraceToString().take(4000)) } catch (_: Throwable) {}
@@ -110,6 +114,11 @@ class MainActivity : ComponentActivity() {
                 // JavaScript callback is about to start the foreground speech recognizer.
                 val launchedByHotword = pendingHotwordActivation || pauseHotwordForActivation
                 dispatchPendingHotwordActivation()
+                if (pendingOverlayText.isNotBlank()) {
+                    val text = pendingOverlayText
+                    pendingOverlayText = ""
+                    web.postDelayed({ web.evaluateJavascript("window.Native && window.Native.onOverlayText && window.Native.onOverlayText(" + org.json.JSONObject.quote(text) + ")", null) }, 350)
+                }
                 if (!launchedByHotword) bridge.restoreHotwordIfEnabled()
             }
         }
@@ -128,7 +137,8 @@ class MainActivity : ComponentActivity() {
             if (::web.isInitialized) web.postDelayed({ web.evaluateJavascript("window.Native && window.Native.onVoiceCalibrationSuccess && window.Native.onVoiceCalibrationSuccess()", null) }, 250)
         } else if (intent.action == AssistantOverlayService.ACTION_OVERLAY_TEXT) {
             val text = intent.getStringExtra(AssistantOverlayService.EXTRA_OVERLAY_TEXT).orEmpty()
-            if (::web.isInitialized) web.postDelayed({ web.evaluateJavascript("window.Native && window.Native.onOverlayText && window.Native.onOverlayText(" + org.json.JSONObject.quote(text) + ")", null) }, 350)
+            if (::web.isInitialized && pageReady) web.postDelayed({ web.evaluateJavascript("window.Native && window.Native.onOverlayText && window.Native.onOverlayText(" + org.json.JSONObject.quote(text) + ")", null) }, 350)
+            else pendingOverlayText = text
         } else if (intent.action == HotwordListeningService.ACTION_HOTWORD_DETECTED) {
             pendingHotwordActivation = true
             // Also pause immediately when this Activity is already in the foreground;
