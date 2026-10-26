@@ -20,6 +20,6 @@
         <receiver android:name=".AssistantBootReceiver" android:enabled="true" android:exported="false"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter></receiver>
         <service android:name=".AlarmGreetingService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
         <service android:name=".HotwordListeningService" android:exported="false" android:foregroundServiceType="microphone" />
-        <service android:name=".AssistantOverlayService" android:exported="false" android:foregroundServiceType="microphone" />
+        <service android:name=".AssistantOverlayService" android:exported="false" />
     </application>
 </manifest>
