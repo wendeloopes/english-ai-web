@@ -174,7 +174,11 @@ class VoskOfflineSpeech(
                 var endpointText = ""
                 while (listening) {
                     val n = audio.read(buffer, 0, buffer.size)
-                    if (n <= 0) continue
+                    if (n < 0) {
+                        if (!listening || cancelled) break
+                        throw IllegalStateException("Offline microphone stream stopped (AudioRecord error $n). Check microphone permission and try again.")
+                    }
+                    if (n == 0) continue
                     var energy = 0.0
                     for (i in 0 until n) {
                         val sample = buffer[i].toInt()
