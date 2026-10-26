@@ -460,7 +460,7 @@ class HotwordListeningService : Service() {
                     val overlay = Intent(this, AssistantOverlayService::class.java).setAction(AssistantOverlayService.ACTION_ACTIVATED)
                     startService(overlay)
                     // Wait for the hotword AudioRecord to be released before starting full Vosk transcription.
-                    android.os.Handler(mainLooper).postDelayed({ startVoskCaptioning() }, 500)
+                    android.os.Handler(mainLooper).postDelayed({ if (!active) startVoskCaptioning() }, 500)
                 } catch (_: Exception) { postHotwordNotification() }
             } else {
                 postHotwordNotification()
