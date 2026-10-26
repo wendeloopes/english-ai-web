@@ -332,20 +332,29 @@ class HotwordListeningService : Service() {
         recognizer = null
         if (isCalibration) {
             try {
+                android.util.Log.d("EnglishAI-VoiceTraining", "Playing calibration success tone")
                 val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 90)
                 tone.startTone(ToneGenerator.TONE_PROP_BEEP2, 180)
                 android.os.Handler(mainLooper).postDelayed({ tone.release() }, 260)
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                android.util.Log.e("EnglishAI-VoiceTraining", "Could not play calibration tone", e)
+            }
             try {
+                android.util.Log.d("EnglishAI-VoiceTraining", "Initializing TTS for \"I'm ready!\"")
                 var greeting: TextToSpeech? = null
                 greeting = TextToSpeech(this) { status ->
                     if (status == TextToSpeech.SUCCESS) {
+                        android.util.Log.d("EnglishAI-VoiceTraining", "TTS initialized; speaking calibration success")
                         greeting?.language = Locale.US
                         greeting?.speak("I'm ready!", TextToSpeech.QUEUE_FLUSH, null, "english-ai-calibrated")
                         android.os.Handler(mainLooper).postDelayed({ try { greeting?.shutdown() } catch (_: Exception) {} }, 2200)
+                    } else {
+                        android.util.Log.e("EnglishAI-VoiceTraining", "TTS initialization failed with status=$status")
                     }
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                android.util.Log.e("EnglishAI-VoiceTraining", "Could not initialize calibration TTS", e)
+            }
             val success = Intent(this, MainActivity::class.java).apply {
                 action = ACTION_CALIBRATION_SUCCESS
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
