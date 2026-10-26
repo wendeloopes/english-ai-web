@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
@@ -19,5 +20,6 @@
         <receiver android:name=".AssistantBootReceiver" android:enabled="true" android:exported="false"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter></receiver>
         <service android:name=".AlarmGreetingService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
         <service android:name=".HotwordListeningService" android:exported="false" android:foregroundServiceType="microphone" />
+        <service android:name=".AssistantOverlayService" android:exported="false" android:foregroundServiceType="microphone" />
     </application>
 </manifest>
