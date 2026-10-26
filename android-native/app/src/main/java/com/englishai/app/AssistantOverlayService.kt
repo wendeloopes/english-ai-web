@@ -93,7 +93,7 @@ class AssistantOverlayService : Service() {
         }
         val input = EditText(this).apply {
             hint = "Type in English…"; setHintTextColor(Color.LTGRAY); setTextColor(Color.WHITE)
-            textSize = 16f; singleLine = true; imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEND
+            textSize = 16f; setSingleLine(true); imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEND
             setBackgroundColor(Color.TRANSPARENT); setPadding(dp(8), dp(4), dp(8), dp(4))
         }
         composer.addView(input, LinearLayout.LayoutParams(0, dp(48), 1f))
