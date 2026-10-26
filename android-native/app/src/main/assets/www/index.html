@@ -525,7 +525,7 @@ function enqueue(s){s=speechText(s);if(!s)return;q.push(s);pump()}
 function pump(){
   if(talking||!q.length)return;const s=q.shift();talking=true;
   const u=new SpeechSynthesisUtterance(s);u.voice=pickVoice();u.lang='en-US';u.rate=S.rate;
-  setState('speaking');showCap(s,-1);
+  setState('speaking');try{if(window.NativeBridge&&typeof NativeBridge.setOverlayCaption==='function')NativeBridge.setOverlayCaption(s)}catch(e){}showCap(s,-1);
   u.onboundary=e=>{if(e.name==='word')showCap(s,e.charIndex)};
   u.onend=u.onerror=()=>{talking=false;if(q.length)pump();else if(!busy)idleAfter()};
   speechSynthesis.speak(u);
