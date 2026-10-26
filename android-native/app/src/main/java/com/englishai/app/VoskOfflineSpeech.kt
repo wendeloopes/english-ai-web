@@ -58,7 +58,7 @@ class VoskOfflineSpeech(
                     ZipInputStream(raw.buffered()).use { zip ->
                         while (true) {
                             val entry = zip.nextEntry ?: break
-                            val pieces = entry.name.replace('\\\\', '/').split('/').filter { it.isNotEmpty() }
+                            val pieces = entry.name.replace('\\', '/').split('/').filter { it.isNotEmpty() }
                             val relative = if (pieces.firstOrNull() == "vosk-model-en-us") pieces.drop(1).joinToString("/") else pieces.joinToString("/")
                             if (relative.isNotBlank() && !relative.split('/').any { it == ".." }) {
                                 val out = File(tempDir, relative)
