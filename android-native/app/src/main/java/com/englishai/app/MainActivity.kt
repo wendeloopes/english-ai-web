@@ -106,7 +106,11 @@ class MainActivity : ComponentActivity() {
                 bridge.refreshVoices()
                 pageReady = true
                 requestFirstLaunchPermissions()
+                // Do not restart the hotword listener during the activation hand-off: the
+                // JavaScript callback is about to start the foreground speech recognizer.
+                val launchedByHotword = pendingHotwordActivation || pauseHotwordForActivation
                 dispatchPendingHotwordActivation()
+                if (!launchedByHotword) bridge.restoreHotwordIfEnabled()
             }
         }
         bridge = NativeBridge(this, web, { pickModel.launch(arrayOf("*/*")) }, { requestMic() }, { tsv, filename ->
