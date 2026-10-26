@@ -37,6 +37,9 @@ class AssistantOverlayService : Service() {
     private var root: FrameLayout? = null
     private var orb: VoiceOrb? = null
     private var captionView: TextView? = null
+    private var titleView: TextView? = null
+    @Volatile private var lastTutorCaptionAt = 0L
+    private var lastActivationToneAt = 0L
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var amplitude = 0f
     private var levelReceiverRegistered = false
@@ -50,17 +53,26 @@ class AssistantOverlayService : Service() {
                 ACTION_TRANSCRIPT -> {
                     val text = intent.getStringExtra(EXTRA_TRANSCRIPT).orEmpty().trim()
                     if (text.isNotEmpty()) {
+                        val source = intent.getStringExtra(EXTRA_TRANSCRIPT_SOURCE) ?: SOURCE_USER
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        // While tutor TTS is actively advancing its caption, do not let microphone
+                        // echo/partial Vosk results replace it. User captions resume shortly after.
+                        if (source == SOURCE_USER && now - lastTutorCaptionAt < 1600L) return
+                        if (source == SOURCE_TUTOR) lastTutorCaptionAt = now
                         val index = intent.getIntExtra(EXTRA_TRANSCRIPT_INDEX, -1)
-                        val caption = android.text.SpannableString(text)
-                        if (index in text.indices && !text[index].isWhitespace()) {
+                        val prefix = if (source == SOURCE_TUTOR) "Tutor: " else "You: "
+                        val caption = android.text.SpannableString(prefix + text)
+                        if (source == SOURCE_TUTOR && index in text.indices && !text[index].isWhitespace()) {
                             var start = index
                             var end = index
                             while (start > 0 && !text[start - 1].isWhitespace()) start--
                             while (end < text.length && !text[end].isWhitespace()) end++
-                            caption.setSpan(android.text.style.ForegroundColorSpan(Color.rgb(205, 190, 255)), start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                            caption.setSpan(android.text.style.StyleSpan(Typeface.BOLD), start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                            val offset = prefix.length
+                            caption.setSpan(android.text.style.ForegroundColorSpan(Color.rgb(205, 190, 255)), start + offset, end + offset, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                            caption.setSpan(android.text.style.StyleSpan(Typeface.BOLD), start + offset, end + offset, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                         }
                         captionView?.text = caption
+                        titleView?.text = if (source == SOURCE_TUTOR) "English AI is speaking" else "I’m listening"
                     }
                 }
             }
@@ -85,8 +97,16 @@ class AssistantOverlayService : Service() {
         if (intent?.action == ACTION_CLOSE) { removeOverlay(); stopSelf(); return START_NOT_STICKY }
         if (Build.VERSION.SDK_INT >= 23 && !android.provider.Settings.canDrawOverlays(this)) { stopSelf(); return START_NOT_STICKY }
         if (root == null) showOverlay()
-        // Play the confirmation only for a valid voice-trigger event, never on manual open/restart.
-        if (intent?.action == ACTION_ACTIVATED) playActivationTone()
+        // Reflect successful hotword activation immediately; manual opens never play the SFX.
+        if (intent?.action == ACTION_ACTIVATED) {
+            titleView?.text = "I’m here!"
+            captionView?.text = "Listening for your English…"
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (now - lastActivationToneAt >= 1400L) {
+                lastActivationToneAt = now
+                playActivationTone()
+            }
+        }
         return START_NOT_STICKY
     }
 
@@ -102,6 +122,7 @@ class AssistantOverlayService : Service() {
             setTextColor(Color.argb(225, 255, 255, 255)); textSize = 20f; gravity = Gravity.CENTER
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         }
+        titleView = title
         container.addView(title, FrameLayout.LayoutParams(-1, 54, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(60) })
 
         val caption = TextView(this).apply {
@@ -182,7 +203,7 @@ class AssistantOverlayService : Service() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
     private fun removeOverlay() {
         try { root?.let { windowManager?.removeView(it) } } catch (_: Exception) {}
-        root = null; orb = null; captionView = null
+        root = null; orb = null; captionView = null; titleView = null
     }
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onDestroy() {
@@ -249,6 +270,9 @@ class AssistantOverlayService : Service() {
         const val EXTRA_TRANSCRIPT = "transcript_text"
         const val EXTRA_TRANSCRIPT_INDEX = "transcript_index"
         const val EXTRA_TRANSCRIPT_FINAL = "transcript_final"
+        const val EXTRA_TRANSCRIPT_SOURCE = "transcript_source"
+        const val SOURCE_USER = "user"
+        const val SOURCE_TUTOR = "tutor"
         const val ACTION_CLOSE = "com.englishai.app.OVERLAY_CLOSE"
         const val ACTION_OVERLAY_TEXT = "com.englishai.app.OVERLAY_TEXT"
         const val EXTRA_OVERLAY_TEXT = "com.englishai.app.OVERLAY_TEXT_VALUE"
