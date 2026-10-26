@@ -39,6 +39,13 @@ class MainActivity : ComponentActivity() {
     private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) bridge.startListeningGranted() else bridge.speechError("Microphone permission is required for voice practice.")
     }
+    private val hotwordPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+        val micGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val notificationsGranted = android.os.Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        if (micGranted && notificationsGranted) bridge.setHotwordEnabled(true)
+        else bridge.hotwordPermissionDenied()
+    }
     private val firstLaunchPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
         if (results[Manifest.permission.RECORD_AUDIO] == true) {
             // Notifications are optional for foreground practice, but required for reliable hotword service.
@@ -47,6 +54,17 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    private fun requestHotwordRuntimePermissions() {
+        val needed = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
+            needed.add(Manifest.permission.RECORD_AUDIO)
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            needed.add(Manifest.permission.POST_NOTIFICATIONS)
+        if (needed.isEmpty()) bridge.setHotwordEnabled(true)
+        else hotwordPermissions.launch(needed.toTypedArray())
+    }
+
     private fun requestFirstLaunchPermissions() {
         val prefs = getSharedPreferences("english_ai_user_settings", MODE_PRIVATE)
         if (prefs.getBoolean("firstLaunchPermissionsAsked", false)) return
@@ -94,7 +112,7 @@ class MainActivity : ComponentActivity() {
         bridge = NativeBridge(this, web, { pickModel.launch(arrayOf("*/*")) }, { requestMic() }, { tsv, filename ->
             pendingAnkiTsv = tsv
             createAnkiExport.launch(filename)
-        })
+        }, { requestHotwordRuntimePermissions() })
         web.addJavascriptInterface(bridge, "NativeBridge")
         setContentView(web)
         web.loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
