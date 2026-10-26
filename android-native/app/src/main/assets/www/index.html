@@ -704,7 +704,7 @@ $('wipe').onclick=()=>{if(confirm('Delete all conversations?')){chats=[];curId=n
 /* Native Android adapter: keep the approved UI; replace browser-only capabilities. */
 if (window.NativeBridge) {
   try{ $('ver').textContent='English Ai '+NativeBridge.getInfo(); }catch(e){}
-  let nativeTokenHandler=null, nativeDone=null, nativeSpeakingId='', nativeListening=false, nativeMicLevel=0;
+  let nativeTokenHandler=null, nativeDone=null, nativeSpeakingId='', nativeListening=false, nativeMicLevel=0, listenAfterActivationGreeting=false;
   window.Native = window.Native || {};
   window.Native.onModelStatus = (ok,label,msg) => {
     const text=label || (ok?'Model ready · offline':'Demo mode');
@@ -726,8 +726,8 @@ if (window.NativeBridge) {
   window.Native.onToken = piece => { if(nativeTokenHandler) nativeTokenHandler(piece); };
   window.Native.onGenDone = () => { const done=nativeDone; nativeDone=null; nativeTokenHandler=null; if(done)done(); };
   window.Native.onGenError = msg => { const done=nativeDone; nativeDone=null; nativeTokenHandler=null; cap(esc(msg||'Generation failed')); setState('idle'); if(done)done(msg||'Generation failed'); };
-  window.Native.onTtsRange = (id,idx) => { if(id===nativeSpeakingId){ showCap(nativeSpeakingText,idx); orbPulse=Math.max(orbPulse,.55); lastRange=performance.now(); wordEnv=Math.max(wordEnv,.72); } };
-  window.Native.onTtsDone = id => { if(id!==nativeSpeakingId)return; talking=false; if(q.length)pump(); else if(!busy)idleAfter(); };
+  window.Native.onTtsRange = (id,idx) => { if(id===nativeSpeakingId){ showCap(nativeSpeakingText,idx); try{if(NativeBridge&&typeof NativeBridge.setOverlayCaption==='function')NativeBridge.setOverlayCaption(nativeSpeakingText,idx)}catch(e){} orbPulse=Math.max(orbPulse,.55); lastRange=performance.now(); wordEnv=Math.max(wordEnv,.72); } };
+  window.Native.onTtsDone = id => { if(id!==nativeSpeakingId)return; talking=false; if(q.length)pump(); else if(listenAfterActivationGreeting){listenAfterActivationGreeting=false;setTimeout(()=>listen(),250);} else if(!busy)idleAfter(); };
   window.Native.onTranslation = (id,translated) => {
     const pt=(translated||'').trim(); if(!pt)return;
     const livePrefix='live:'+nativeTranslationId+':';
@@ -768,7 +768,7 @@ if (window.NativeBridge) {
     const history=msgs.slice(-12).map(m=>({role:m.r==='me'?'user':'model',content:m.t}));
     NativeBridge.generate(JSON.stringify({system:sysPrompt(),chat:curId,count:msgs.length,messages:history}));
   });
-  pump = function(){ if(talking||!q.length)return; const s=q.shift(); talking=true; nativeSpeakingText=s; nativeSpeakingId=String(Date.now())+String(Math.random()); setState('speaking'); showCap(s,-1); NativeBridge.speak(nativeSpeakingId,s,String(S.rate),String(S.voice||'')); };
+  pump = function(){ if(talking||!q.length)return; const s=q.shift(); talking=true; nativeSpeakingText=s; nativeSpeakingId=String(Date.now())+String(Math.random()); setState('speaking'); showCap(s,-1); try{if(NativeBridge&&typeof NativeBridge.setOverlayCaption==='function')NativeBridge.setOverlayCaption(s,-1)}catch(e){} NativeBridge.speak(nativeSpeakingId,s,String(S.rate),String(S.voice||'')); };
   stopAll = function(){ nativeTranslationId=''; nativeTranslationBubble=null; gen++; q=[]; talking=false; busy=false; NativeBridge.cancelGenerate(); NativeBridge.stopSpeaking(); if(nativeListening)NativeBridge.cancelListening(); nativeListening=false; rec=null; persist(); setState('idle'); };
   listen = async function(){ if(state==='listening')return; stopAll(); heard=''; nativeListening=true; setState('listening'); cap('<span class="you">Say something in English…</span>'); NativeBridge.startListening(); };
   window.Native.onVoiceCalibrationStatus = (ok,message) => { const el=$('voiceCalibrationStatus'); if(el&&message)el.textContent=message; if(el)el.style.color=ok?'#8dffbd':'#d9ccff'; };
@@ -795,15 +795,14 @@ if (window.NativeBridge) {
   });
   window.Native.onHotwordActivated = () => {
     if(state==='listening') return;
-    // Quiet, short confirmation tone plus visual listening ripple while the app is visible.
-    try {
-      const Ctx=window.AudioContext||window.webkitAudioContext;
-      if(Ctx){const ctx=new Ctx(),osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sine';osc.frequency.value=660;gain.gain.setValueAtTime(0.0001,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(0.055,ctx.currentTime+0.015);gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.16);osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+0.17);osc.onended=()=>ctx.close();}
-    } catch(e) {}
     $('voice').classList.add('voice-activated');
     if(state==='thinking'||state==='speaking') stopAll();
     go('voice');
-    setTimeout(()=>{ if(state==='idle') listen(); }, 500);
+    // Speak a clear audible acknowledgement first; begin microphone capture only after
+    // TTS completes so the assistant does not transcribe its own greeting.
+    listenAfterActivationGreeting=true;
+    q.unshift("I'm here. What would you like to practice?");
+    pump();
   };
   sendVoice = function(){ if(nativeListening)NativeBridge.stopListening(); };
   const choose=$('file').parentElement.querySelector('label[for="file"]'); if(choose)choose.onclick=e=>{e.preventDefault();NativeBridge.pickModel();};
